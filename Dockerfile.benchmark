@@ -11,7 +11,7 @@
 # Usage:
 #   docker buildx build \
 #     --secret id=boringcache_token,env=BORINGCACHE_API_TOKEN \
-#     --build-arg BORINGCACHE_WORKSPACE=boringcache/benchmark-mastodon \
+#     --build-arg BORINGCACHE_WORKSPACE=boringcache/benchmarks \
 #     -f Dockerfile.benchmark .
 
 ARG TARGETPLATFORM=${TARGETPLATFORM}
@@ -33,7 +33,7 @@ ARG UID="991"
 ARG GID="991"
 
 # BoringCache workspace for caching deps across builds
-ARG BORINGCACHE_WORKSPACE="boringcache/benchmark-mastodon"
+ARG BORINGCACHE_WORKSPACE="boringcache/benchmarks"
 ARG BORINGCACHE_TAG_LIBVIPS="mastodon-libvips-8.18.0"
 ARG BORINGCACHE_TAG_FFMPEG="mastodon-ffmpeg-8.0"
 ARG BORINGCACHE_TAG_GEMS="mastodon-gems"

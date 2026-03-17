@@ -6,7 +6,7 @@ This repo exists separately from the central benchmarks publisher so Mastodon ca
 
 - a pinned upstream source commit
 - isolated GitHub Actions cache usage
-- isolated BoringCache workspace usage
+- one shared BoringCache workspace name: `boringcache/benchmarks`
 - independent nightly benchmark runs
 
 ## Source Model
@@ -31,3 +31,11 @@ Pinned upstream source:
 ## Output
 
 Each workflow uploads machine-readable JSON and Markdown summaries. Those artifacts are intended to be ingested by the central `boringcache/benchmarks` publisher later.
+
+## Token Model
+
+This repo uses split BoringCache tokens as the standard CI shape:
+
+- `BORINGCACHE_RESTORE_TOKEN` for read-only restore and proxy access
+- `BORINGCACHE_SAVE_TOKEN` for trusted write paths
+- `BORINGCACHE_API_TOKEN` only where a single bearer variable is still required for compatibility
