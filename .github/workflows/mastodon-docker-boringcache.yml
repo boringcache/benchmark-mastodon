@@ -92,9 +92,6 @@ jobs:
           ffmpeg_tag="mastodon-ffmpeg-8.0-${run_suffix}"
           gems_tag="mastodon-gems-${run_suffix}"
           yarn_tag="mastodon-yarn-${run_suffix}"
-          internal_platform_suffix="debian-13-x86_64"
-          purge_internal_tags_csv="${libvips_tag}-${internal_platform_suffix},${ffmpeg_tag}-${internal_platform_suffix},${gems_tag}-${internal_platform_suffix},${yarn_tag}-${internal_platform_suffix}"
-          purge_registry_tags_csv="${docker_registry_tag}"
           tags_csv="${libvips_tag},${ffmpeg_tag},${gems_tag},${yarn_tag},${cache_scope},${docker_registry_tag}"
           echo "cache_scope=${cache_scope}" >> "$GITHUB_OUTPUT"
           echo "docker_registry_tag=${docker_registry_tag}" >> "$GITHUB_OUTPUT"
@@ -102,8 +99,6 @@ jobs:
           echo "ffmpeg_tag=${ffmpeg_tag}" >> "$GITHUB_OUTPUT"
           echo "gems_tag=${gems_tag}" >> "$GITHUB_OUTPUT"
           echo "yarn_tag=${yarn_tag}" >> "$GITHUB_OUTPUT"
-          echo "purge_internal_tags_csv=${purge_internal_tags_csv}" >> "$GITHUB_OUTPUT"
-          echo "purge_registry_tags_csv=${purge_registry_tags_csv}" >> "$GITHUB_OUTPUT"
           echo "tags_csv=${tags_csv}" >> "$GITHUB_OUTPUT"
           cat > ./run-boringcache-build.sh <<'SH'
           #!/usr/bin/env bash
@@ -251,18 +246,6 @@ jobs:
           BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
           BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
 
-      - name: Purge BoringCache benchmark tags
-        env:
-          BORINGCACHE_API_TOKEN: ${{ github.event_name == 'pull_request' && '' || secrets.BORINGCACHE_ADMIN_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${BORINGCACHE_API_TOKEN:-}" ]]; then
-            echo "Skipping purge: BORINGCACHE_ADMIN_TOKEN not set"
-            exit 0
-          fi
-          boringcache delete --no-git "$BENCHMARK_WORKSPACE" "${{ steps.scope.outputs.purge_registry_tags_csv }}" || true
-          boringcache delete --no-platform --no-git "$BENCHMARK_WORKSPACE" "${{ steps.scope.outputs.purge_internal_tags_csv }}" || true
-
       - name: Run cold + seed cache build
         id: cold_baseline_build
         env:
@@ -333,9 +316,6 @@ jobs:
           ffmpeg_tag="mastodon-ffmpeg-8.0-${run_suffix}"
           gems_tag="mastodon-gems-${run_suffix}"
           yarn_tag="mastodon-yarn-${run_suffix}"
-          internal_platform_suffix="debian-13-x86_64"
-          purge_internal_tags_csv="${libvips_tag}-${internal_platform_suffix},${ffmpeg_tag}-${internal_platform_suffix},${gems_tag}-${internal_platform_suffix},${yarn_tag}-${internal_platform_suffix}"
-          purge_registry_tags_csv="${docker_registry_tag}"
           tags_csv="${libvips_tag},${ffmpeg_tag},${gems_tag},${yarn_tag},${cache_scope},${docker_registry_tag}"
           echo "cache_scope=${cache_scope}" >> "$GITHUB_OUTPUT"
           echo "docker_registry_tag=${docker_registry_tag}" >> "$GITHUB_OUTPUT"
@@ -343,8 +323,6 @@ jobs:
           echo "ffmpeg_tag=${ffmpeg_tag}" >> "$GITHUB_OUTPUT"
           echo "gems_tag=${gems_tag}" >> "$GITHUB_OUTPUT"
           echo "yarn_tag=${yarn_tag}" >> "$GITHUB_OUTPUT"
-          echo "purge_internal_tags_csv=${purge_internal_tags_csv}" >> "$GITHUB_OUTPUT"
-          echo "purge_registry_tags_csv=${purge_registry_tags_csv}" >> "$GITHUB_OUTPUT"
           echo "tags_csv=${tags_csv}" >> "$GITHUB_OUTPUT"
           cat > ./run-boringcache-build.sh <<'SH'
           #!/usr/bin/env bash
