@@ -165,7 +165,9 @@ RUN --mount=type=secret,id=boringcache_token \
   --mount=type=secret,id=boringcache_save_token \
   --mount=type=bind,source=boringcache-bin,target=/usr/local/bin/boringcache \
   export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  export BORINGCACHE_RESTORE_TOKEN="${BORINGCACHE_API_TOKEN}" && \
   save_token="$(cat /run/secrets/boringcache_save_token 2>/dev/null || true)" && \
+  export BORINGCACHE_SAVE_TOKEN="${save_token}" && \
   if [ -n "$save_token" ]; then \
     boringcache save --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_LIBVIPS}:/usr/local/libvips"; \
   fi
@@ -225,7 +227,9 @@ RUN --mount=type=secret,id=boringcache_token \
   --mount=type=secret,id=boringcache_save_token \
   --mount=type=bind,source=boringcache-bin,target=/usr/local/bin/boringcache \
   export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  export BORINGCACHE_RESTORE_TOKEN="${BORINGCACHE_API_TOKEN}" && \
   save_token="$(cat /run/secrets/boringcache_save_token 2>/dev/null || true)" && \
+  export BORINGCACHE_SAVE_TOKEN="${save_token}" && \
   if [ -n "$save_token" ]; then \
     boringcache save --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_FFMPEG}:/usr/local/ffmpeg"; \
   fi
@@ -250,7 +254,9 @@ RUN \
   --mount=type=bind,source=boringcache-bin,target=/usr/local/bin/boringcache \
   --mount=type=cache,id=gem-cache-${TARGETPLATFORM},target=/usr/local/bundle/cache/,sharing=locked \
   export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  export BORINGCACHE_RESTORE_TOKEN="${BORINGCACHE_API_TOKEN}" && \
   save_token="$(cat /run/secrets/boringcache_save_token 2>/dev/null || true)" && \
+  export BORINGCACHE_SAVE_TOKEN="${save_token}" && \
   if [ "$BORINGCACHE_INTERNAL_RESTORE_ENABLED" = "1" ]; then \
     rm -rf /tmp/boringcache-bundle && mkdir -p /tmp/boringcache-bundle && \
     boringcache restore --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_GEMS}:/tmp/boringcache-bundle" || true && \
@@ -292,7 +298,9 @@ RUN \
   --mount=type=cache,id=corepack-cache-${TARGETPLATFORM},target=/usr/local/share/.cache/corepack,sharing=locked \
   --mount=type=cache,id=yarn-cache-${TARGETPLATFORM},target=/usr/local/share/.cache/yarn,sharing=locked \
   export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  export BORINGCACHE_RESTORE_TOKEN="${BORINGCACHE_API_TOKEN}" && \
   save_token="$(cat /run/secrets/boringcache_save_token 2>/dev/null || true)" && \
+  export BORINGCACHE_SAVE_TOKEN="${save_token}" && \
   if [ "$BORINGCACHE_INTERNAL_RESTORE_ENABLED" = "1" ]; then \
     boringcache restore --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_YARN}:/opt/mastodon/node_modules" || true; \
   fi && \
