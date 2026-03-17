@@ -1,0 +1,13 @@
+*
+!.dockerignore
+!.gitmodules
+!Dockerfile.benchmark
+!README.md
+!boringcache-bin
+!scripts
+!scripts/**
+!scenarios
+!scenarios/**
+!upstream
+!upstream/**
+upstream/.git

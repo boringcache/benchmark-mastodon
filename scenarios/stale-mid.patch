@@ -1,0 +1,10 @@
+diff --git a/Gemfile b/Gemfile
+index 9a0e1d6..c677627 100644
+--- a/Gemfile
++++ b/Gemfile
+@@ -234,3 +234,5 @@ gem 'hcaptcha', '~> 7.1'
+ gem 'mail', '~> 2.8'
+ 
+ gem 'vite_rails', '~> 3.0.19'
++
++# benchmark stale pinned

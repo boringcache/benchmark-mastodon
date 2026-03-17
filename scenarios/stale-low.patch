@@ -1,0 +1,10 @@
+diff --git a/app/controllers/application_controller.rb b/app/controllers/application_controller.rb
+index a19fcc7..d8a21c6 100644
+--- a/app/controllers/application_controller.rb
++++ b/app/controllers/application_controller.rb
+@@ -198,3 +198,5 @@ class ApplicationController < ActionController::Base
+     response.cache_control.replace(private: true, no_store: true)
+   end
+ end
++
++# benchmark stale mutation pinned

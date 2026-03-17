@@ -1,0 +1,357 @@
+# syntax=docker/dockerfile:1.18
+#
+# Mastodon Dockerfile optimized with BoringCache
+# Based on upstream mastodon/mastodon Dockerfile
+#
+# Key changes:
+# - BoringCache CLI caches compiled libvips and ffmpeg binaries
+# - BoringCache CLI caches bundled gems and yarn packages
+# - Even on cold Docker builds, dependencies restore from BoringCache
+#
+# Usage:
+#   docker buildx build \
+#     --secret id=boringcache_token,env=BORINGCACHE_API_TOKEN \
+#     --build-arg BORINGCACHE_WORKSPACE=boringcache/benchmark-mastodon \
+#     -f Dockerfile.benchmark .
+
+ARG TARGETPLATFORM=${TARGETPLATFORM}
+ARG BUILDPLATFORM=${BUILDPLATFORM}
+ARG BASE_REGISTRY="docker.io"
+ARG RUBY_VERSION="3.4.8"
+ARG NODE_MAJOR_VERSION="24"
+ARG DEBIAN_VERSION="trixie"
+FROM ${BASE_REGISTRY}/node:${NODE_MAJOR_VERSION}-${DEBIAN_VERSION}-slim AS node
+FROM ${BASE_REGISTRY}/ruby:${RUBY_VERSION}-slim-${DEBIAN_VERSION} AS ruby
+
+ARG MASTODON_VERSION_PRERELEASE=""
+ARG MASTODON_VERSION_METADATA=""
+ARG SOURCE_COMMIT=""
+ARG RAILS_SERVE_STATIC_FILES="true"
+ARG RUBY_YJIT_ENABLE="1"
+ARG TZ="Etc/UTC"
+ARG UID="991"
+ARG GID="991"
+
+# BoringCache workspace for caching deps across builds
+ARG BORINGCACHE_WORKSPACE="boringcache/benchmark-mastodon"
+ARG BORINGCACHE_TAG_LIBVIPS="mastodon-libvips-8.18.0"
+ARG BORINGCACHE_TAG_FFMPEG="mastodon-ffmpeg-8.0"
+ARG BORINGCACHE_TAG_GEMS="mastodon-gems"
+ARG BORINGCACHE_TAG_YARN="mastodon-yarn"
+ARG BORINGCACHE_INTERNAL_RESTORE_ENABLED="1"
+ARG BORINGCACHE_INTERNAL_SAVE_ENABLED="1"
+
+ENV \
+  MASTODON_VERSION_PRERELEASE="${MASTODON_VERSION_PRERELEASE}" \
+  MASTODON_VERSION_METADATA="${MASTODON_VERSION_METADATA}" \
+  SOURCE_COMMIT="${SOURCE_COMMIT}" \
+  RAILS_SERVE_STATIC_FILES=${RAILS_SERVE_STATIC_FILES} \
+  RUBY_YJIT_ENABLE=${RUBY_YJIT_ENABLE} \
+  TZ=${TZ}
+
+ENV \
+  BIND="0.0.0.0" \
+  NODE_ENV="production" \
+  RAILS_ENV="production" \
+  DEBIAN_FRONTEND="noninteractive" \
+  PATH="${PATH}:/opt/ruby/bin:/opt/mastodon/bin" \
+  MALLOC_CONF="narenas:2,background_thread:true,thp:never,dirty_decay_ms:1000,muzzy_decay_ms:0" \
+  MASTODON_SIDEKIQ_READY_FILENAME=sidekiq_process_has_started_and_will_begin_processing_jobs
+
+SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
+
+ARG TARGETPLATFORM
+
+RUN echo "Target platform is $TARGETPLATFORM"
+
+RUN \
+  rm -f /etc/apt/apt.conf.d/docker-clean; \
+  echo "${TZ}" > /etc/localtime; \
+  groupadd -g "${GID}" mastodon; \
+  useradd -l -u "${UID}" -g "${GID}" -m -d /opt/mastodon mastodon; \
+  ln -s /opt/mastodon /mastodon;
+
+WORKDIR /opt/mastodon
+
+# hadolint ignore=DL3008,DL3005
+RUN \
+  --mount=type=cache,id=apt-cache-${TARGETPLATFORM},target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,id=apt-lib-${TARGETPLATFORM},target=/var/lib/apt,sharing=locked \
+  apt-get update; \
+  apt-get dist-upgrade -yq; \
+  apt-get install -y --no-install-recommends \
+  curl \
+  file \
+  libjemalloc2 \
+  patchelf \
+  procps \
+  tini \
+  tzdata \
+  wget \
+  ; \
+  patchelf --add-needed libjemalloc.so.2 /usr/local/bin/ruby; \
+  apt-get purge -y patchelf;
+
+
+# =============================================================
+# Build layer with BoringCache CLI available
+# =============================================================
+FROM ruby AS build
+
+ARG TARGETPLATFORM
+ARG BORINGCACHE_WORKSPACE
+
+# hadolint ignore=DL3008
+RUN \
+  --mount=type=cache,id=apt-cache-${TARGETPLATFORM},target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,id=apt-lib-${TARGETPLATFORM},target=/var/lib/apt,sharing=locked \
+  apt-get update; \
+  apt-get install -y --no-install-recommends \
+  autoconf automake build-essential cmake git \
+  libgdbm-dev libglib2.0-dev libgmp-dev libicu-dev libidn-dev \
+  libpq-dev libssl-dev libtool libyaml-dev meson nasm pkg-config \
+  shared-mime-info xz-utils \
+  libcgif-dev libexif-dev libexpat1-dev libgirepository1.0-dev \
+  libheif-dev libhwy-dev libimagequant-dev libjpeg62-turbo-dev \
+  liblcms2-dev libspng-dev libtiff-dev libwebp-dev \
+  libdav1d-dev liblzma-dev libmp3lame-dev libopus-dev \
+  libsnappy-dev libvorbis-dev libvpx-dev libx264-dev libx265-dev \
+  ca-certificates \
+  ;
+
+
+# =============================================================
+# libvips - cached with BoringCache
+# =============================================================
+FROM build AS libvips
+
+ARG TARGETPLATFORM
+ARG BORINGCACHE_WORKSPACE
+ARG BORINGCACHE_TAG_LIBVIPS
+ARG BORINGCACHE_INTERNAL_RESTORE_ENABLED
+ARG BORINGCACHE_INTERNAL_SAVE_ENABLED
+ARG VIPS_VERSION=8.18.0
+ARG VIPS_URL=https://github.com/libvips/libvips/releases/download
+
+WORKDIR /usr/local/libvips/src
+
+# Try to restore cached libvips build
+RUN --mount=type=secret,id=boringcache_token \
+  --mount=type=bind,source=boringcache-bin,target=/usr/local/bin/boringcache \
+  export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  if [ "$BORINGCACHE_INTERNAL_RESTORE_ENABLED" = "1" ]; then \
+    rm -rf /tmp/boringcache-libvips && mkdir -p /tmp/boringcache-libvips && \
+    boringcache restore --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_LIBVIPS}:/tmp/boringcache-libvips" || true && \
+    if [ -f /tmp/boringcache-libvips/lib/libvips.so ]; then \
+      mkdir -p /usr/local/libvips && cp -a /tmp/boringcache-libvips/. /usr/local/libvips/; \
+    fi; \
+  fi
+# Only build if not restored from cache
+RUN \
+  if [ ! -f /usr/local/libvips/lib/libvips.so ]; then \
+    echo "Building libvips from source..."; \
+    cd /usr/local/libvips/src; \
+    curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors "${VIPS_URL}/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.xz" -o vips.tar.xz; \
+    tar xf vips.tar.xz; \
+    cd vips-${VIPS_VERSION}; \
+    meson setup build --prefix /usr/local/libvips --libdir=lib -Ddeprecated=false -Dintrospection=disabled -Dmodules=disabled -Dexamples=false; \
+    cd build && ninja && ninja install; \
+  else \
+    echo "libvips restored from BoringCache!"; \
+  fi
+
+# Save compiled libvips to BoringCache
+RUN --mount=type=secret,id=boringcache_token \
+  --mount=type=secret,id=boringcache_save_token \
+  --mount=type=bind,source=boringcache-bin,target=/usr/local/bin/boringcache \
+  export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  save_token="$(cat /run/secrets/boringcache_save_token 2>/dev/null || true)" && \
+  if [ -n "$save_token" ]; then \
+    boringcache save --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_LIBVIPS}:/usr/local/libvips"; \
+  fi
+
+# =============================================================
+# ffmpeg - cached with BoringCache
+# =============================================================
+FROM build AS ffmpeg
+
+ARG TARGETPLATFORM
+ARG BORINGCACHE_WORKSPACE
+ARG BORINGCACHE_TAG_FFMPEG
+ARG BORINGCACHE_INTERNAL_RESTORE_ENABLED
+ARG BORINGCACHE_INTERNAL_SAVE_ENABLED
+ARG FFMPEG_VERSION=8.0
+ARG FFMPEG_URL=https://github.com/FFmpeg/FFmpeg/archive/refs/tags
+
+WORKDIR /usr/local/ffmpeg/src
+
+# Try to restore cached ffmpeg build
+RUN --mount=type=secret,id=boringcache_token \
+  --mount=type=bind,source=boringcache-bin,target=/usr/local/bin/boringcache \
+  export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  if [ "$BORINGCACHE_INTERNAL_RESTORE_ENABLED" = "1" ]; then \
+    rm -rf /tmp/boringcache-ffmpeg && mkdir -p /tmp/boringcache-ffmpeg && \
+    boringcache restore --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_FFMPEG}:/tmp/boringcache-ffmpeg" || true && \
+    if [ -f /tmp/boringcache-ffmpeg/bin/ffmpeg ]; then \
+      mkdir -p /usr/local/ffmpeg && cp -a /tmp/boringcache-ffmpeg/. /usr/local/ffmpeg/; \
+    fi; \
+  fi
+# Only build if not restored from cache
+RUN \
+  if [ ! -f /usr/local/ffmpeg/bin/ffmpeg ]; then \
+    echo "Building ffmpeg from source..."; \
+    cd /usr/local/ffmpeg/src; \
+    curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors "${FFMPEG_URL}/n${FFMPEG_VERSION}.tar.gz" -o ffmpeg.tar.gz; \
+    tar xf ffmpeg.tar.gz && mv FFmpeg-n${FFMPEG_VERSION} ffmpeg-${FFMPEG_VERSION}; \
+    cd ffmpeg-${FFMPEG_VERSION}; \
+    ./configure \
+      --prefix=/usr/local/ffmpeg \
+      --toolchain=hardened \
+      --disable-debug --disable-devices --disable-doc --disable-ffplay \
+      --disable-network --disable-static \
+      --enable-ffmpeg --enable-ffprobe --enable-gpl \
+      --enable-libdav1d --enable-libmp3lame --enable-libopus \
+      --enable-libsnappy --enable-libvorbis --enable-libvpx \
+      --enable-libwebp --enable-libx264 --enable-libx265 \
+      --enable-shared --enable-version3; \
+    make -j$(nproc); \
+    make install; \
+  else \
+    echo "ffmpeg restored from BoringCache!"; \
+  fi
+
+# Save compiled ffmpeg to BoringCache
+RUN --mount=type=secret,id=boringcache_token \
+  --mount=type=secret,id=boringcache_save_token \
+  --mount=type=bind,source=boringcache-bin,target=/usr/local/bin/boringcache \
+  export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  save_token="$(cat /run/secrets/boringcache_save_token 2>/dev/null || true)" && \
+  if [ -n "$save_token" ]; then \
+    boringcache save --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_FFMPEG}:/usr/local/ffmpeg"; \
+  fi
+
+# =============================================================
+# bundler - gems cached with BoringCache
+# =============================================================
+FROM build AS bundler
+
+ARG TARGETPLATFORM
+ARG BORINGCACHE_WORKSPACE
+ARG BORINGCACHE_TAG_GEMS
+ARG BORINGCACHE_INTERNAL_RESTORE_ENABLED
+ARG BORINGCACHE_INTERNAL_SAVE_ENABLED
+
+COPY upstream/Gemfile* /opt/mastodon/
+
+# Restore cached gems from BoringCache, then install
+RUN \
+  --mount=type=secret,id=boringcache_token \
+  --mount=type=secret,id=boringcache_save_token \
+  --mount=type=bind,source=boringcache-bin,target=/usr/local/bin/boringcache \
+  --mount=type=cache,id=gem-cache-${TARGETPLATFORM},target=/usr/local/bundle/cache/,sharing=locked \
+  export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  save_token="$(cat /run/secrets/boringcache_save_token 2>/dev/null || true)" && \
+  if [ "$BORINGCACHE_INTERNAL_RESTORE_ENABLED" = "1" ]; then \
+    rm -rf /tmp/boringcache-bundle && mkdir -p /tmp/boringcache-bundle && \
+    boringcache restore --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_GEMS}:/tmp/boringcache-bundle" || true && \
+    if [ -d /tmp/boringcache-bundle/gems ]; then \
+      cp -a /tmp/boringcache-bundle/. /usr/local/bundle/; \
+    fi; \
+  fi && \
+  bundle config set --global frozen "true" && \
+  bundle config set --global cache_all "false" && \
+  bundle config set --local without "development test" && \
+  bundle config set silence_root_warning "true" && \
+  bundle install -j"$(nproc)" && \
+  if [ -n "$save_token" ]; then \
+    boringcache save --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_GEMS}:/usr/local/bundle"; \
+  fi
+
+# =============================================================
+# precompiler - yarn + asset pipeline
+# =============================================================
+FROM build AS precompiler
+
+ARG TARGETPLATFORM
+ARG BORINGCACHE_WORKSPACE
+ARG BORINGCACHE_TAG_YARN
+ARG BORINGCACHE_INTERNAL_RESTORE_ENABLED
+ARG BORINGCACHE_INTERNAL_SAVE_ENABLED
+
+COPY upstream/ /opt/mastodon/
+COPY --from=node /usr/local/bin /usr/local/bin
+COPY --from=node /usr/local/lib /usr/local/lib
+
+RUN rm /usr/local/bin/yarn*; corepack enable; corepack prepare --activate;
+
+# Restore yarn cache and install
+RUN \
+  --mount=type=secret,id=boringcache_token \
+  --mount=type=secret,id=boringcache_save_token \
+  --mount=type=bind,source=boringcache-bin,target=/usr/local/bin/boringcache \
+  --mount=type=cache,id=corepack-cache-${TARGETPLATFORM},target=/usr/local/share/.cache/corepack,sharing=locked \
+  --mount=type=cache,id=yarn-cache-${TARGETPLATFORM},target=/usr/local/share/.cache/yarn,sharing=locked \
+  export BORINGCACHE_API_TOKEN="$(cat /run/secrets/boringcache_token)" && \
+  save_token="$(cat /run/secrets/boringcache_save_token 2>/dev/null || true)" && \
+  if [ "$BORINGCACHE_INTERNAL_RESTORE_ENABLED" = "1" ]; then \
+    boringcache restore --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_YARN}:/opt/mastodon/node_modules" || true; \
+  fi && \
+  yarn workspaces focus --production @mastodon/mastodon && \
+  if [ -n "$save_token" ]; then \
+    boringcache save --no-git "$BORINGCACHE_WORKSPACE" "${BORINGCACHE_TAG_YARN}:/opt/mastodon/node_modules"; \
+  fi
+COPY --from=libvips /usr/local/libvips/bin /usr/local/bin
+COPY --from=libvips /usr/local/libvips/lib /usr/local/lib
+COPY --from=bundler /opt/mastodon /opt/mastodon/
+COPY --from=bundler /usr/local/bundle/ /usr/local/bundle/
+
+RUN \
+  ldconfig; \
+  SECRET_KEY_BASE_DUMMY=1 bundle exec rails assets:precompile; \
+  rm -fr /opt/mastodon/tmp;
+
+
+# =============================================================
+# Final image (same as upstream)
+# =============================================================
+FROM ruby AS mastodon
+
+ARG TARGETPLATFORM
+
+# hadolint ignore=DL3008
+RUN \
+  --mount=type=cache,id=apt-cache-${TARGETPLATFORM},target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,id=apt-lib-${TARGETPLATFORM},target=/var/lib/apt,sharing=locked \
+  --mount=type=cache,id=corepack-cache-${TARGETPLATFORM},target=/usr/local/share/.cache/corepack,sharing=locked \
+  --mount=type=cache,id=yarn-cache-${TARGETPLATFORM},target=/usr/local/share/.cache/yarn,sharing=locked \
+  apt-get update; \
+  apt-get install -y --no-install-recommends \
+  libexpat1 libglib2.0-0t64 libicu76 libidn12 libpq5 \
+  libreadline8t64 libssl3t64 libyaml-0-2 \
+  libcgif0 libexif12 libheif1 libhwy1t64 libimagequant0 \
+  libjpeg62-turbo liblcms2-2 libspng0 libtiff6 libwebp7 \
+  libwebpdemux2 libwebpmux3 \
+  libdav1d7 libmp3lame0 libopencore-amrnb0 libopencore-amrwb0 \
+  libopus0 libsnappy1v5 libtheora0 libvorbis0a libvorbisenc2 \
+  libvorbisfile3 libvpx9 libx264-164 libx265-215 \
+  ;
+
+COPY upstream/ /opt/mastodon/
+COPY --from=precompiler /opt/mastodon/public/packs /opt/mastodon/public/packs
+COPY --from=precompiler /opt/mastodon/public/assets /opt/mastodon/public/assets
+COPY --from=bundler /usr/local/bundle/ /usr/local/bundle/
+COPY --from=libvips /usr/local/libvips/bin /usr/local/bin
+COPY --from=libvips /usr/local/libvips/lib /usr/local/lib
+COPY --from=ffmpeg /usr/local/ffmpeg/bin /usr/local/bin
+COPY --from=ffmpeg /usr/local/ffmpeg/lib /usr/local/lib
+
+RUN ldconfig; vips -v; ffmpeg -version; ffprobe -version;
+RUN bundle exec bootsnap precompile --gemfile app/ lib/;
+RUN \
+  mkdir -p /opt/mastodon/public/system; \
+  chown mastodon:mastodon /opt/mastodon/public/system; \
+  chown -R mastodon:mastodon /opt/mastodon/tmp;
+
+USER mastodon
+EXPOSE 3000
+ENTRYPOINT ["/usr/bin/tini", "--"]
