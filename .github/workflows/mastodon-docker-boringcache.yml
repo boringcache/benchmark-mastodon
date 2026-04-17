@@ -300,7 +300,7 @@ jobs:
           BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
           BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
 
-      - name: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling' && 'Run rolling seed build' || 'Run fresh seed build' }}
+      - name: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling' && 'Run rolling seed-only build' || 'Run fresh seed build' }}
         id: cold_baseline_build
         env:
           BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
@@ -332,6 +332,7 @@ jobs:
   scenario-builds:
     name: Scenario (${{ matrix.phase }}) (BoringCache)
     needs: seed-cache
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.cache_lane != 'rolling' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -753,6 +754,7 @@ jobs:
   finalize-benchmark:
     name: Finalize benchmark artifacts
     needs: [seed-cache, scenario-builds]
+    if: ${{ always() && needs.seed-cache.result == 'success' && (needs.scenario-builds.result == 'success' || needs.scenario-builds.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -772,12 +774,14 @@ jobs:
           cache-runtime: false
 
       - name: Download scenario timing artifacts
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.cache_lane != 'rolling' }}
         uses: actions/download-artifact@v8
         with:
           pattern: benchmark-phase-${{ env.BENCHMARK_ID }}-boringcache-*
           path: benchmark-phase
           merge-multiple: true
       - name: Collect scenario timings
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.cache_lane != 'rolling' }}
         id: timings
         run: |
           set -euo pipefail
@@ -809,7 +813,7 @@ jobs:
       - name: Measure BoringCache storage usage
         id: cache_size
         env:
-          BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+          BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN || secrets.BORINGCACHE_API_TOKEN }}
         run: |
           tags_csv="${{ needs.seed-cache.outputs.tags_csv }}"
           bytes="$(.benchmark-config/scripts/sum-boringcache-check-sizes.sh "$BENCHMARK_WORKSPACE" "$tags_csv")"
@@ -829,14 +833,14 @@ jobs:
             --project-repo "$PROJECT_REPO" \
             --project-ref "${{ steps.upstream_ref.outputs.sha }}" \
             --cold-seconds "${{ needs.seed-cache.outputs.cold_seconds }}" \
-            --warm1-seconds "${{ steps.timings.outputs.warm1_seconds }}" \
-            --layer-miss-seconds "${{ steps.timings.outputs.layer_miss_seconds }}" \
-            --docker-cache-import-seconds "${{ steps.timings.outputs.warm1_docker_cache_import_seconds }}" \
+            --warm1-seconds "${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling' && '' || steps.timings.outputs.warm1_seconds }}" \
+            --layer-miss-seconds "${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling' && '' || steps.timings.outputs.layer_miss_seconds }}" \
+            --docker-cache-import-seconds "${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling' && '' || steps.timings.outputs.warm1_docker_cache_import_seconds }}" \
             --docker-cache-export-seconds "${{ needs.seed-cache.outputs.docker_cache_export_seconds }}" \
             --cache-storage-bytes "${{ steps.cache_size.outputs.bytes }}" \
             --cache-storage-source "boringcache-check" \
             --bytes-uploaded "${{ steps.cache_size.outputs.bytes }}" \
-            --hit-behavior-note "Source tree comes from the benchmark repo's committed upstream submodule. Cold+seed starts from empty BC tags and empty Docker layer cache, uses --no-cache + cache-to via the BC registry proxy (mode=max), and records cold timing while priming the shared cache. Warm1 rebuilds the same pinned base tree on a fresh runner with cache-from only, internal restore enabled, and no synthetic mutations."
+            --hit-behavior-note "${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling' && 'Rolling lane: this run executes only the upstream-sync seed build; warm1 and layer-miss follow-up runs are intentionally skipped.' || 'Fresh lane: cold+seed starts from empty BC tags and empty Docker layer cache, uses --no-cache + cache-to via the BC registry proxy (mode=max), and records cold timing while priming the shared cache. Warm1 rebuilds the same pinned base tree on a fresh runner with cache-from only, internal restore enabled, and no synthetic mutations.' }}"
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v6
