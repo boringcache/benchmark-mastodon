@@ -176,6 +176,7 @@ jobs:
           build_log="$(mktemp /tmp/boringcache-build.XXXXXX.log)"
           max_attempts=3
           cache_export_pattern='expected sha256:.*got sha256:e3b0|error writing layer blob|400 Bad Request|broken pipe'
+          cache_import_blob_pattern='failed to copy: httpReadSeeker: failed open: could not fetch content descriptor .* from remote: not found'
 
           mode="${1:-full}"
           start_proxy() { :; }
@@ -219,13 +220,76 @@ jobs:
             fi
           }
 
+          build_import_status() {
+            if grep -Eq 'failed to configure .*cache importer' "$build_log"; then
+              echo "not_found"
+            elif grep -Eq 'inferred cache manifest type|importing cache manifest' "$build_log"; then
+              echo "ok"
+            else
+              echo "none"
+            fi
+          }
+
+          write_build_diagnostics() {
+            local output_path="${BENCHMARK_DIAGNOSTICS_OUTPUT:-}"
+            [[ -n "$output_path" ]] || return 0
+
+            local cached_steps=""
+            cached_steps="$(grep -Ec '^#[0-9]+ CACHED$' "$build_log" || true)"
+            local observability_path="${BORINGCACHE_OBSERVABILITY_JSONL_PATH:-}"
+
+            mkdir -p "$(dirname "$output_path")"
+            {
+              echo "strategy=boringcache"
+              echo "mode=${mode}"
+              echo "builder=${BUILDER:-}"
+              echo "cache_scope=${CACHE_SCOPE:-}"
+              echo "cache_from=${CACHE_FROM:-}"
+              echo "cache_from_disabled=${cache_from_disabled:-0}"
+              echo "cache_to=${CACHE_TO:-}"
+              echo "registry_proxy_tags=${BORINGCACHE_REGISTRY_PROXY_TAGS:-}"
+              echo "docker_registry_tag=${BORINGCACHE_DOCKER_REGISTRY_TAG:-}"
+              printf 'cache_args='
+              printf '%q ' "${cache_args[@]}"
+              printf '\n'
+              echo "import_status=$(build_import_status)"
+              echo "cached_steps=${cached_steps}"
+              echo "import_lines<<EOF"
+              grep -E 'importing cache manifest|failed to configure .*cache importer|inferred cache manifest type' "$build_log" || true
+              echo "EOF"
+              echo "export_lines<<EOF"
+              grep -E 'exporting cache to registry|DONE [0-9.]+s$' "$build_log" | tail -n 80 || true
+              echo "EOF"
+              echo "proxy_summary<<EOF"
+              grep -E 'Mode:|OCI Human Tags|Internal Registry Root Tag|Startup mode|Full-tag hydration|OCI HEAD|SESSION tool=oci|KV flush|root publish|error|warn' "$proxy_log" | tail -n 160 || true
+              echo "EOF"
+              echo "slow_done_lines<<EOF"
+              grep -E '^#[0-9]+ DONE [0-9]+(\.[0-9]+)?s$' "$build_log" | tail -n 80 || true
+              echo "EOF"
+              echo "observability_jsonl=${observability_path}"
+              if [[ -n "$observability_path" && -s "$observability_path" ]]; then
+                printf 'observability_events='
+                wc -l < "$observability_path" | tr -d ' '
+                printf '\n'
+                echo "observability_summary<<EOF"
+                grep -E 'oci_blob_upload|upload_session_commit|cache_finalize_publish|receipt|429|rate' "$observability_path" | tail -n 160 || true
+                echo "EOF"
+              fi
+            } > "$output_path"
+          }
+
+          cache_from_disabled=0
+          cache_from_is_enabled() {
+            [[ "$cache_from_disabled" != "1" && -n "${CACHE_FROM:-}" ]]
+          }
+
           attempt=1
           while true; do
             cache_args=()
             internal_restore_enabled="${BORINGCACHE_INTERNAL_RESTORE_ENABLED:-1}"
             internal_save_enabled="${BORINGCACHE_INTERNAL_SAVE_ENABLED:-1}"
             if [[ "$mode" == "full" ]]; then
-              [[ -n "${CACHE_FROM:-}" ]] && cache_args+=(--cache-from "$CACHE_FROM")
+              cache_from_is_enabled && cache_args+=(--cache-from "$CACHE_FROM")
               [[ -n "${CACHE_TO:-}" ]] && cache_args+=(--cache-to "$CACHE_TO")
             elif [[ "$mode" == "seed-cache" ]]; then
               # --no-cache is required for type=registry export: without it, buildx
@@ -236,7 +300,7 @@ jobs:
             elif [[ "$mode" == "partial-warm" ]]; then
               # Read-only: no --cache-to. Internal saves are gated by an empty
               # save-token secret so the Dockerfile instruction keys stay stable.
-              [[ -n "${CACHE_FROM:-}" ]] && cache_args+=(--cache-from "$CACHE_FROM")
+              cache_from_is_enabled && cache_args+=(--cache-from "$CACHE_FROM")
             elif [[ "$mode" == "internal-only" ]]; then
               # Disable Docker layer cache for a full stale rebuild.
               cache_args=(--no-cache)
@@ -252,6 +316,7 @@ jobs:
               echo "Registry proxy did not become ready (attempt ${attempt}/${max_attempts})" >&2
               tail -n 200 "$proxy_log" || true
               if [[ "$attempt" -ge "$max_attempts" ]]; then
+                write_build_diagnostics
                 exit 1
               fi
               stop_proxy
@@ -302,15 +367,22 @@ jobs:
               tail -n 200 "$proxy_log" 2>/dev/null || true
               echo "=== End proxy log ==="
               write_build_metrics
+              write_build_diagnostics
               break
             fi
 
             stop_proxy
 
+            if [[ "$cache_from_disabled" != "1" && "$mode" =~ ^(full|partial-warm)$ ]] && grep -Eq "$cache_import_blob_pattern" "$build_log"; then
+              echo "Detected registry cache manifest with a missing blob (attempt ${attempt}/${max_attempts}); retrying without --cache-from to reseed." >&2
+              cache_from_disabled=1
+            fi
+
             if [[ "$attempt" -ge "$max_attempts" ]]; then
               echo "Build (${mode}) failed after ${max_attempts} attempts" >&2
               tail -n 200 "$build_log" || true
               tail -n 400 "$proxy_log" || true
+              write_build_diagnostics
               exit "$status"
             fi
 
@@ -346,6 +418,7 @@ jobs:
         env:
           BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
           BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+          BORINGCACHE_OBSERVABILITY_JSONL_PATH: ${{ runner.temp }}/mastodon-boringcache-seed-observability.jsonl
 
       - name: Export Docker internal cache controls
         run: |
@@ -363,25 +436,60 @@ jobs:
           CACHE_FROM: ${{ steps.docker_cache.outputs.cache-from }}
           CACHE_TO: ${{ steps.docker_cache.outputs.cache-to }}
           CACHE_SCOPE: ${{ steps.scope.outputs.cache_scope }}
+          CACHE_LANE: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane || 'fresh' }}
+          BORINGCACHE_REGISTRY_PROXY_TAGS: ${{ steps.scope.outputs.registry_proxy_tags }}
+          BORINGCACHE_DOCKER_REGISTRY_TAG: ${{ steps.scope.outputs.docker_registry_tag }}
           BORINGCACHE_TAG_LIBVIPS: ${{ steps.scope.outputs.libvips_tag }}
           BORINGCACHE_TAG_FFMPEG: ${{ steps.scope.outputs.ffmpeg_tag }}
           BORINGCACHE_TAG_GEMS: ${{ steps.scope.outputs.gems_tag }}
           BORINGCACHE_TAG_DOCKER: ${{ steps.scope.outputs.docker_registry_tag }}
           BORINGCACHE_TAG_YARN: ${{ steps.scope.outputs.yarn_tag }}
+          BORINGCACHE_OBSERVABILITY_JSONL_PATH: ${{ runner.temp }}/mastodon-boringcache-seed-observability.jsonl
           IMAGE_TAG: mastodon-benchmark:latest
         run: |
           set -euo pipefail
           metrics_file="${RUNNER_TEMP}/cold-build-metrics.env"
+          diagnostics_file="benchmark-diagnostics/${BENCHMARK_ID}-boringcache-${CACHE_LANE}-seed.txt"
+          observability_artifact="benchmark-diagnostics/${BENCHMARK_ID}-boringcache-${CACHE_LANE}-seed-observability.jsonl"
           rm -f "$metrics_file"
+          rm -f "$diagnostics_file"
+          rm -f "$observability_artifact"
+          mkdir -p "$(dirname "$diagnostics_file")"
           phase_start="${{ steps.seed_timing_start.outputs.started_at }}"
           start="$(date +%s)"
-          BENCHMARK_METRICS_OUTPUT="$metrics_file" ./run-boringcache-build.sh ${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling' && 'full' || 'seed-cache' }}
+          set +e
+          BENCHMARK_METRICS_OUTPUT="$metrics_file" BENCHMARK_DIAGNOSTICS_OUTPUT="$diagnostics_file" ./run-boringcache-build.sh ${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling' && 'full' || 'seed-cache' }}
+          status="$?"
+          set -e
           end="$(date +%s)"
+          if [[ -s "$diagnostics_file" ]]; then
+            {
+              echo "seed_phase_started_at=${phase_start}"
+              echo "seed_build_started_at=${start}"
+              echo "seed_build_finished_at=${end}"
+              echo "seed_phase_wall_seconds=$((end - phase_start))"
+              echo "seed_build_wall_seconds=$((end - start))"
+            } >> "$diagnostics_file"
+          fi
+          if [[ -s "$BORINGCACHE_OBSERVABILITY_JSONL_PATH" ]]; then
+            cp "$BORINGCACHE_OBSERVABILITY_JSONL_PATH" "$observability_artifact"
+          fi
+          if [[ "$status" -ne 0 ]]; then
+            exit "$status"
+          fi
           echo "seconds=$((end - phase_start))" >> "$GITHUB_OUTPUT"
           echo "build_seconds=$((end - start))" >> "$GITHUB_OUTPUT"
           if [[ -s "$metrics_file" ]]; then
             cat "$metrics_file" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Upload seed diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-diagnostics-${{ env.BENCHMARK_ID }}-boringcache-${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane || 'fresh' }}
+          path: benchmark-diagnostics/*
+          if-no-files-found: ignore
 
   scenario-builds:
     name: Scenario (${{ matrix.phase }}) (BoringCache)
@@ -461,6 +569,7 @@ jobs:
           build_log="$(mktemp /tmp/boringcache-build.XXXXXX.log)"
           max_attempts=3
           cache_export_pattern='expected sha256:.*got sha256:e3b0|error writing layer blob|400 Bad Request|broken pipe'
+          cache_import_blob_pattern='failed to copy: httpReadSeeker: failed open: could not fetch content descriptor .* from remote: not found'
 
           mode="${1:-full}"
           start_proxy() { :; }
@@ -504,13 +613,18 @@ jobs:
             fi
           }
 
+          cache_from_disabled=0
+          cache_from_is_enabled() {
+            [[ "$cache_from_disabled" != "1" && -n "${CACHE_FROM:-}" ]]
+          }
+
           attempt=1
           while true; do
             cache_args=()
             internal_restore_enabled="${BORINGCACHE_INTERNAL_RESTORE_ENABLED:-1}"
             internal_save_enabled="${BORINGCACHE_INTERNAL_SAVE_ENABLED:-1}"
             if [[ "$mode" == "full" ]]; then
-              [[ -n "${CACHE_FROM:-}" ]] && cache_args+=(--cache-from "$CACHE_FROM")
+              cache_from_is_enabled && cache_args+=(--cache-from "$CACHE_FROM")
               [[ -n "${CACHE_TO:-}" ]] && cache_args+=(--cache-to "$CACHE_TO")
             elif [[ "$mode" == "seed-cache" ]]; then
               # --no-cache is required for type=registry export: without it, buildx
@@ -521,7 +635,7 @@ jobs:
             elif [[ "$mode" == "partial-warm" ]]; then
               # Read-only: no --cache-to. Internal saves are gated by an empty
               # save-token secret so the Dockerfile instruction keys stay stable.
-              [[ -n "${CACHE_FROM:-}" ]] && cache_args+=(--cache-from "$CACHE_FROM")
+              cache_from_is_enabled && cache_args+=(--cache-from "$CACHE_FROM")
             elif [[ "$mode" == "internal-only" ]]; then
               # Disable Docker layer cache for a full stale rebuild.
               cache_args=(--no-cache)
@@ -591,6 +705,11 @@ jobs:
             fi
 
             stop_proxy
+
+            if [[ "$cache_from_disabled" != "1" && "$mode" =~ ^(full|partial-warm)$ ]] && grep -Eq "$cache_import_blob_pattern" "$build_log"; then
+              echo "Detected registry cache manifest with a missing blob (attempt ${attempt}/${max_attempts}); retrying without --cache-from to reseed." >&2
+              cache_from_disabled=1
+            fi
 
             if [[ "$attempt" -ge "$max_attempts" ]]; then
               echo "Build (${mode}) failed after ${max_attempts} attempts" >&2
