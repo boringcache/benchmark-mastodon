@@ -470,7 +470,6 @@ jobs:
           mode: docker
           docker-command: setup
           docker-internal-cache: off
-          oci-hydration: bodies-before-ready
           workspace: ${{ env.BENCHMARK_WORKSPACE }}
           cache-tag: ${{ steps.scope.outputs.cache_scope }}
           registry-tag: ${{ steps.scope.outputs.registry_proxy_tags }}
@@ -836,7 +835,6 @@ jobs:
           mode: docker
           docker-command: setup
           docker-internal-cache: off
-          oci-hydration: bodies-before-ready
           workspace: ${{ env.BENCHMARK_WORKSPACE }}
           cache-tag: ${{ needs.seed-cache.outputs.cache_scope }}
           registry-tag: ${{ steps.scope.outputs.registry_proxy_tags }}
