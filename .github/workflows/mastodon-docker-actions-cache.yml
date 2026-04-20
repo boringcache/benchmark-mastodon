@@ -21,9 +21,7 @@ on:
       - "upstream"
   pull_request:
     paths:
-      - ".dockerignore"
       - ".gitmodules"
-      - "Dockerfile.benchmark"
       - ".github/workflows/mastodon-docker-boringcache.yml"
       - ".github/workflows/mastodon-docker-actions-cache.yml"
       - "README.md"
@@ -38,7 +36,6 @@ permissions:
 env:
   PROJECT_REPO: mastodon/mastodon
   BENCHMARK_ID: mastodon-docker
-  BENCHMARK_WORKSPACE: boringcache/benchmarks
 
 jobs:
   seed-cache:
@@ -71,23 +68,6 @@ jobs:
       - name: Start seed timing
         id: seed_timing_start
         run: echo "started_at=$(date +%s)" >> "$GITHUB_OUTPUT"
-
-      - name: Install BoringCache CLI with boringcache/one
-        uses: boringcache/one@v1
-        with:
-          setup: none
-          mode: archive
-          workspace: ${{ env.BENCHMARK_WORKSPACE }}
-          cli-platform: linux-amd64
-          cache-runtime: false
-
-      - name: Prepare deterministic benchmark inputs
-        run: |
-          cat > ./boringcache-bin <<'SH'
-          #!/usr/bin/env sh
-          exit 0
-          SH
-          chmod +x ./boringcache-bin
 
       - name: Set up Docker Buildx
         id: buildx
@@ -144,7 +124,6 @@ jobs:
           CACHE_SCOPE_PRIMARY: ${{ steps.scope.outputs.cache_scope_primary }}
           CACHE_SCOPE_FALLBACK: ${{ steps.scope.outputs.cache_scope_fallback }}
           CACHE_LANE: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane || 'fresh' }}
-          BORINGCACHE_API_TOKEN: benchmark-noop-token
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
@@ -180,15 +159,11 @@ jobs:
             set +e
             DOCKER_BUILDKIT=1 docker buildx build \
               --builder "$BUILDER" \
-              --file Dockerfile.benchmark \
+              --file upstream/Dockerfile \
               --tag mastodon-benchmark:latest \
               --progress=plain \
               "${build_cache_args[@]}" \
-              --secret id=boringcache_token,env=BORINGCACHE_API_TOKEN \
-              --build-arg BORINGCACHE_WORKSPACE="$BENCHMARK_WORKSPACE" \
-              --build-arg BORINGCACHE_INTERNAL_RESTORE_ENABLED="0" \
-              --build-arg BORINGCACHE_INTERNAL_SAVE_ENABLED="0" \
-              . 2>&1 | tee "$build_log"
+              upstream 2>&1 | tee "$build_log"
             status=${PIPESTATUS[0]}
             set -e
 
@@ -269,23 +244,6 @@ jobs:
         id: scenario_timing_start
         run: echo "started_at=$(date +%s)" >> "$GITHUB_OUTPUT"
 
-      - name: Install BoringCache CLI with boringcache/one
-        uses: boringcache/one@v1
-        with:
-          setup: none
-          mode: archive
-          workspace: ${{ env.BENCHMARK_WORKSPACE }}
-          cli-platform: linux-amd64
-          cache-runtime: false
-
-      - name: Prepare deterministic benchmark inputs
-        run: |
-          cat > ./boringcache-bin <<'SH'
-          #!/usr/bin/env sh
-          exit 0
-          SH
-          chmod +x ./boringcache-bin
-
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v4
@@ -301,7 +259,6 @@ jobs:
         env:
           BUILDER: ${{ steps.buildx.outputs.name }}
           CACHE_SCOPE: ${{ needs.seed-cache.outputs.cache_scope }}
-          BORINGCACHE_API_TOKEN: benchmark-noop-token
         run: |
           set -euo pipefail
 
@@ -324,15 +281,11 @@ jobs:
             set +e
             DOCKER_BUILDKIT=1 docker buildx build \
               --builder "$BUILDER" \
-              --file Dockerfile.benchmark \
+              --file upstream/Dockerfile \
               --tag mastodon-benchmark:latest \
               --progress=plain \
               --cache-from "type=gha,scope=${CACHE_SCOPE}" \
-              --secret id=boringcache_token,env=BORINGCACHE_API_TOKEN \
-              --build-arg BORINGCACHE_WORKSPACE="$BENCHMARK_WORKSPACE" \
-              --build-arg BORINGCACHE_INTERNAL_RESTORE_ENABLED="0" \
-              --build-arg BORINGCACHE_INTERNAL_SAVE_ENABLED="0" \
-              . 2>&1 | tee "$build_log"
+              upstream 2>&1 | tee "$build_log"
             status=${PIPESTATUS[0]}
             set -e
 
@@ -364,7 +317,6 @@ jobs:
         env:
           BUILDER: ${{ steps.buildx.outputs.name }}
           CACHE_SCOPE: ${{ needs.seed-cache.outputs.cache_scope }}
-          BORINGCACHE_API_TOKEN: benchmark-noop-token
         run: |
           set -euo pipefail
 
@@ -375,15 +327,11 @@ jobs:
             set +e
             DOCKER_BUILDKIT=1 docker buildx build \
               --builder "$BUILDER" \
-              --file Dockerfile.benchmark \
+              --file upstream/Dockerfile \
               --tag mastodon-benchmark:latest \
               --progress=plain \
               --cache-from "type=gha,scope=${CACHE_SCOPE}" \
-              --secret id=boringcache_token,env=BORINGCACHE_API_TOKEN \
-              --build-arg BORINGCACHE_WORKSPACE="$BENCHMARK_WORKSPACE" \
-              --build-arg BORINGCACHE_INTERNAL_RESTORE_ENABLED="0" \
-              --build-arg BORINGCACHE_INTERNAL_SAVE_ENABLED="0" \
-              .
+              upstream
             status=$?
             set -e
 
@@ -410,7 +358,6 @@ jobs:
         env:
           BUILDER: ${{ steps.buildx.outputs.name }}
           CACHE_SCOPE: ${{ needs.seed-cache.outputs.cache_scope }}
-          BORINGCACHE_API_TOKEN: benchmark-noop-token
         run: |
           set -euo pipefail
           phase_start="${{ steps.scenario_timing_start.outputs.started_at }}"
@@ -420,15 +367,11 @@ jobs:
             set +e
             DOCKER_BUILDKIT=1 docker buildx build \
               --builder "$BUILDER" \
-              --file Dockerfile.benchmark \
+              --file upstream/Dockerfile \
               --tag mastodon-benchmark:latest \
               --progress=plain \
               --cache-from "type=gha,scope=${CACHE_SCOPE}" \
-              --secret id=boringcache_token,env=BORINGCACHE_API_TOKEN \
-              --build-arg BORINGCACHE_WORKSPACE="$BENCHMARK_WORKSPACE" \
-              --build-arg BORINGCACHE_INTERNAL_RESTORE_ENABLED="0" \
-              --build-arg BORINGCACHE_INTERNAL_SAVE_ENABLED="0" \
-              .
+              upstream
             status=$?
             set -e
 
@@ -455,7 +398,6 @@ jobs:
         env:
           BUILDER: ${{ steps.buildx.outputs.name }}
           CACHE_SCOPE: ${{ needs.seed-cache.outputs.cache_scope }}
-          BORINGCACHE_API_TOKEN: benchmark-noop-token
         run: |
           set -euo pipefail
           phase_start="${{ steps.scenario_timing_start.outputs.started_at }}"
@@ -465,15 +407,11 @@ jobs:
             set +e
             DOCKER_BUILDKIT=1 docker buildx build \
               --builder "$BUILDER" \
-              --file Dockerfile.benchmark \
+              --file upstream/Dockerfile \
               --tag mastodon-benchmark:latest \
               --progress=plain \
               --cache-from "type=gha,scope=${CACHE_SCOPE}" \
-              --secret id=boringcache_token,env=BORINGCACHE_API_TOKEN \
-              --build-arg BORINGCACHE_WORKSPACE="$BENCHMARK_WORKSPACE" \
-              --build-arg BORINGCACHE_INTERNAL_RESTORE_ENABLED="0" \
-              --build-arg BORINGCACHE_INTERNAL_SAVE_ENABLED="0" \
-              .
+              upstream
             status=$?
             set -e
 
@@ -495,11 +433,10 @@ jobs:
           echo "build_seconds=$((end - start))" >> "$GITHUB_OUTPUT"
 
       - name: Run layer-miss build (no Docker cache, full image)
-        id: internal_only_build
+        id: layer_miss_build
         if: matrix.phase == 'layer_miss'
         env:
           BUILDER: ${{ steps.buildx.outputs.name }}
-          BORINGCACHE_API_TOKEN: benchmark-noop-token
         run: |
           set -euo pipefail
 
@@ -510,15 +447,11 @@ jobs:
             set +e
             DOCKER_BUILDKIT=1 docker buildx build \
               --builder "$BUILDER" \
-              --file Dockerfile.benchmark \
+              --file upstream/Dockerfile \
               --tag mastodon-benchmark:latest \
               --progress=plain \
               --no-cache \
-              --secret id=boringcache_token,env=BORINGCACHE_API_TOKEN \
-              --build-arg BORINGCACHE_WORKSPACE="$BENCHMARK_WORKSPACE" \
-              --build-arg BORINGCACHE_INTERNAL_RESTORE_ENABLED="0" \
-              --build-arg BORINGCACHE_INTERNAL_SAVE_ENABLED="0" \
-              .
+              upstream
             status=$?
             set -e
 
@@ -565,8 +498,8 @@ jobs:
               build_seconds="${{ steps.stale_mid_build.outputs.build_seconds }}"
               ;;
             layer_miss)
-              seconds="${{ steps.internal_only_build.outputs.seconds }}"
-              build_seconds="${{ steps.internal_only_build.outputs.build_seconds }}"
+              seconds="${{ steps.layer_miss_build.outputs.seconds }}"
+              build_seconds="${{ steps.layer_miss_build.outputs.build_seconds }}"
               ;;
             *)
               echo "Unknown phase: ${{ matrix.phase }}" >&2
@@ -690,38 +623,3 @@ jobs:
 
       - name: Publish summary
         run: cat "${{ steps.artifact_files.outputs.md_path }}" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Storage comparison with BoringCache
-        if: always() && steps.cache_size.outputs.bytes
-        env:
-          BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
-        run: |
-          gha_bytes="${{ steps.cache_size.outputs.bytes }}"
-
-          # Query BC API for Mastodon entries (skip if no token)
-          if [[ -z "${BORINGCACHE_API_TOKEN}" ]]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "_Storage comparison skipped (BORINGCACHE_API_TOKEN not set)_" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          response="$(curl -sf \
-            -H "Authorization: Bearer ${BORINGCACHE_API_TOKEN}" \
-            -H "User-Agent: BoringCache-CLI/1.0.0" \
-            -H "X-BoringCache-Client-Type: CLI" \
-            "https://api.boringcache.com/v1/workspaces/${BENCHMARK_WORKSPACE}/caches?limit=100" 2>/dev/null)" || {
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "_Storage comparison skipped (BC API unreachable)_" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          }
-
-          bc_bytes="$(echo "$response" | jq '[.entries[] | select(.tag != null and (.tag | startswith("mastodon"))) | .total_size_bytes] | add // 0')"
-          bc_count="$(echo "$response" | jq '[.entries[] | select(.tag != null and (.tag | startswith("mastodon")))] | length')"
-
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Storage comparison" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Cache | Mastodon storage | Notes |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| GitHub Actions | $(numfmt --to=iec-i --suffix=B "${gha_bytes}") | Repo total (buildkit blobs shared across projects) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| BoringCache | $(numfmt --to=iec-i --suffix=B "${bc_bytes}") | ${bc_count} Mastodon entries (content-addressed, deduped across branches) |" >> "$GITHUB_STEP_SUMMARY"
