@@ -22,7 +22,6 @@ Pinned upstream source:
 
 - `cold`
 - `warm1`
-- `layer_miss`
 
 BoringCache uses the outer BuildKit registry/OCI cache path only. It does not call BoringCache inside Dockerfile `RUN` steps, and upstream Dockerfile cache mounts stay native to BuildKit.
 
