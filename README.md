@@ -23,6 +23,8 @@ Pinned upstream source:
 - `cold`
 - `warm1`
 
+Fresh lane runs both phases on the same pinned source tree. Rolling lane records only the first build after upstream sync and skips `warm1`.
+
 BoringCache uses the outer BuildKit registry/OCI cache path only. It does not call BoringCache inside Dockerfile `RUN` steps, and upstream Dockerfile cache mounts stay native to BuildKit.
 
 ## Output
