@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      BORINGCACHE_PROXY_METADATA_HINTS: benchmark=${{ env.BENCHMARK_ID }},phase=seed
+      BORINGCACHE_PROXY_METADATA_HINTS: benchmark=mastodon-docker,phase=seed
     outputs:
       cache_scope: ${{ steps.scope.outputs.cache_scope }}
       cold_seconds: ${{ steps.cold_baseline_build.outputs.seconds }}
@@ -657,7 +657,7 @@ jobs:
     timeout-minutes: 120
     env:
       BORINGCACHE_SAVE_TOKEN: ''
-      BORINGCACHE_PROXY_METADATA_HINTS: benchmark=${{ env.BENCHMARK_ID }},phase=warm
+      BORINGCACHE_PROXY_METADATA_HINTS: benchmark=mastodon-docker,phase=warm
     steps:
       - name: Checkout benchmark repo
         uses: actions/checkout@v6
