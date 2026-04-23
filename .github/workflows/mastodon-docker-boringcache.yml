@@ -414,7 +414,6 @@ jobs:
             elif [[ "$mode" == "partial-warm" ]]; then
               # Read-only: no --cache-to.
               cache_from_is_enabled && cache_args+=(--cache-from "$CACHE_FROM")
-              cache_args=(--no-cache --target precompiler)
             else
               echo "Unknown build mode: $mode" >&2
               exit 1
@@ -815,7 +814,6 @@ jobs:
             elif [[ "$mode" == "partial-warm" ]]; then
               # Read-only: no --cache-to.
               cache_from_is_enabled && cache_args+=(--cache-from "$CACHE_FROM")
-              cache_args=(--no-cache --target precompiler)
             else
               echo "Unknown build mode: $mode" >&2
               exit 1
