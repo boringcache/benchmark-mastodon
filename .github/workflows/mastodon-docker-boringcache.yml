@@ -14,7 +14,7 @@ on:
           - fresh
           - rolling
       cli_ref:
-        description: "Internal BoringCache diagnostic: CLI ref for registry-proxy debugging"
+        description: "Internal benchmark diagnostic only: build this boringcache/cli ref instead of using the released CLI"
         required: false
         type: string
   push:
@@ -134,6 +134,7 @@ jobs:
             echo "### Internal CLI ref diagnostic"
             echo
             echo "Using boringcache/cli ref \`${CLI_REF}\` for the outer registry proxy only."
+            echo "Launch proof runs should leave \`cli_ref\` empty and use the released CLI resolved by \`boringcache/one@v1\`."
             echo "The Dockerfile and build context remain the pinned upstream source; no BoringCache helper is mounted into Docker RUN steps."
           } >> "$GITHUB_STEP_SUMMARY"
 
