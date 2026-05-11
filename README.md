@@ -6,7 +6,7 @@ This repo exists separately from the central benchmarks publisher so Mastodon ca
 
 - a pinned upstream source commit
 - isolated GitHub Actions cache usage
-- one shared BoringCache workspace name: `boringcache/benchmarks`
+- one per-repo BoringCache workspace name: `boringcache/benchmark-mastodon`
 - independent benchmark runs triggered by upstream sync commits and manual dispatches
 
 ## Source Model

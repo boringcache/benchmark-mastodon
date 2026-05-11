@@ -49,7 +49,7 @@ jobs:
       dockerfile_path: upstream/Dockerfile
       docker_context: upstream
       image_tag: mastodon-benchmark:latest
-      benchmark_workspace: boringcache/benchmarks
+      benchmark_workspace: ${{ github.repository }}
     secrets: inherit
     permissions:
       contents: read
