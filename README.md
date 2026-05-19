@@ -25,7 +25,7 @@ Pinned upstream source:
 
 Fresh lane runs a no-prior-cache cold build plus one warm rerun on the same pinned source tree. Rolling lane records the upstream commit build as-is after each upstream sync against the prior rolling cache and skips `warm1`.
 
-Rolling dispatch runs the Docker AC/BC pair and the dependency cache set on every upstream sync commit. The dependency set includes actions/cache, BoringCache package CAS, and the BoringCache archive-control lane.
+Rolling dispatch runs the Docker GitHub Actions Cache/BoringCache pair and the dependency cache set on every upstream sync commit. The dependency set includes actions/cache, BoringCache package CAS, and the BoringCache archive-control lane.
 
 BoringCache uses the outer BuildKit registry/OCI cache path only. It does not call BoringCache inside Dockerfile `RUN` steps, and upstream Dockerfile cache mounts stay native to BuildKit.
 
