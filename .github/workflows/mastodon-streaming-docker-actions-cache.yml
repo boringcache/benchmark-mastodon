@@ -1,0 +1,52 @@
+name: "Mastodon Streaming Docker - GitHub Actions Cache"
+run-name: >-
+  ${{ format('{0} | {1}', github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling' && 'GitHub Actions Cache Rolling' || 'GitHub Actions Cache Fresh', github.event_name == 'schedule' && 'Weekly fresh' || github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || format('Manual dispatch ({0})', github.ref_name)) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      cache_lane:
+        description: "Benchmark lane"
+        required: false
+        type: choice
+        default: fresh
+        options:
+          - fresh
+          - rolling
+  schedule:
+    - cron: "15 4 * * 2"
+  pull_request:
+    paths:
+      - ".gitmodules"
+      - ".github/workflows/mastodon-streaming-docker-boringcache.yml"
+      - ".github/workflows/mastodon-streaming-docker-actions-cache.yml"
+      - ".github/workflows/reusable-docker-buildkit-benchmark.yml"
+      - "README.md"
+      - "scenarios/**"
+      - "scripts/**"
+      - "upstream"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane || 'fresh' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  benchmark:
+    uses: ./.github/workflows/reusable-docker-buildkit-benchmark.yml
+    with:
+      strategy: actions-cache
+      cache_lane: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_lane || 'fresh' }}
+      benchmark_id: mastodon-streaming
+      project_repo: mastodon/mastodon
+      dockerfile_path: upstream/streaming/Dockerfile
+      docker_context: upstream
+      image_tag: mastodon-streaming-benchmark:latest
+      benchmark_workspace: ${{ github.repository }}
+    secrets: inherit
+    permissions:
+      contents: read
+      actions: write

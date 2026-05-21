@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: true
+      run_streaming_docker:
+        description: "Dispatch the Streaming Docker rolling benchmark pair"
+        required: false
+        type: boolean
+        default: true
       run_dependency_cas:
         description: "Dispatch the GitHub Actions Cache/BoringCache dependency CAS rolling benchmark set"
         required: false
@@ -56,6 +61,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh workflow run "mastodon-docker-boringcache.yml" --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}"
+          -f cache_lane=rolling
+          -f blob_download_concurrency="${{ inputs.blob_download_concurrency || '' }}"
+          -f blob_prefetch_concurrency="${{ inputs.blob_prefetch_concurrency || '' }}"
+          -f oci_stream_through_min_bytes="${{ inputs.oci_stream_through_min_bytes || '' }}"
+
+  dispatch-streaming-docker:
+    name: Dispatch Streaming Docker rolling benchmark pair
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_streaming_docker }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch GitHub Actions Cache streaming rolling lane
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run "mastodon-streaming-docker-actions-cache.yml" --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}" -f cache_lane=rolling
+
+      - name: Dispatch BoringCache streaming rolling lane
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh workflow run "mastodon-streaming-docker-boringcache.yml" --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}"
           -f cache_lane=rolling
           -f blob_download_concurrency="${{ inputs.blob_download_concurrency || '' }}"
           -f blob_prefetch_concurrency="${{ inputs.blob_prefetch_concurrency || '' }}"
