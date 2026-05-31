@@ -30,9 +30,11 @@ The benchmark has two Docker surfaces:
 - `mastodon-docker`: main Mastodon image from `upstream/Dockerfile`.
 - `mastodon-streaming`: streaming service image from `upstream/streaming/Dockerfile`.
 
-Rolling dispatch runs the main Docker pair, the streaming Docker pair, and the dependency cache set on every upstream sync commit. The dependency set includes actions/cache, BoringCache package CAS, and the BoringCache archive-control lane.
+Rolling dispatch runs the combined main Docker benchmark, the streaming Docker pair, and the dependency cache set on every upstream sync commit. The dependency set includes actions/cache, BoringCache package CAS, and the BoringCache archive-control lane.
 
 BoringCache uses the outer BuildKit registry/OCI cache path only. It does not call BoringCache inside Dockerfile `RUN` steps, and upstream Dockerfile cache mounts stay native to BuildKit.
+
+The main Docker workflow is [`.github/workflows/mastodon-docker-benchmark.yml`](.github/workflows/mastodon-docker-benchmark.yml), which runs GitHub Actions Cache, BoringCache OCI, and BoringCache Native side by side. The provider-specific main Docker workflows remain for manual diagnostics.
 
 ## Output
 
