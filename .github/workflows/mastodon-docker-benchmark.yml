@@ -44,7 +44,7 @@ permissions:
 
 jobs:
   github-actions-cache:
-    name: Build with GitHub Actions Cache
+    name: GHA
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -56,7 +56,7 @@ jobs:
           fetch-depth: 1
           submodules: false
 
-      - name: Build with GitHub Actions Cache
+      - name: GHA
         uses: ./.github/actions/docker-rolling-benchmark
         with:
           strategy: actions-cache
@@ -68,7 +68,7 @@ jobs:
           benchmark_workspace: ${{ github.repository }}
 
   boringcache-oci:
-    name: Build with BoringCache OCI
+    name: BC
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -83,7 +83,7 @@ jobs:
           fetch-depth: 1
           submodules: false
 
-      - name: Build with BoringCache OCI
+      - name: BC
         uses: ./.github/actions/docker-rolling-benchmark
         with:
           strategy: boringcache
@@ -102,7 +102,7 @@ jobs:
           oci_stream_through_min_bytes: ${{ github.event_name == 'workflow_dispatch' && inputs.oci_stream_through_min_bytes || '' }}
 
   boringcache-auto:
-    name: Build with BoringCache Auto
+    name: BC auto
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -117,7 +117,7 @@ jobs:
           fetch-depth: 1
           submodules: false
 
-      - name: Build with BoringCache Auto
+      - name: BC auto
         uses: ./.github/actions/docker-rolling-benchmark
         with:
           strategy: boringcache
