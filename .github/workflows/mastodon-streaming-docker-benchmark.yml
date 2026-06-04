@@ -4,7 +4,6 @@ run-name: >-
 
 on:
   workflow_dispatch:
-    inputs:
   schedule:
     - cron: "15 4 * * 2"
   pull_request:

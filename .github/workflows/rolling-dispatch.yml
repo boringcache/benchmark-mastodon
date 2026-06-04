@@ -2,17 +2,6 @@ name: "Rolling Benchmark Dispatch"
 
 on:
   workflow_dispatch:
-    inputs:
-      run_docker:
-        description: "Dispatch the Docker rolling benchmark pair"
-        required: false
-        type: boolean
-        default: true
-      run_streaming_docker:
-        description: "Dispatch the Streaming Docker rolling benchmark"
-        required: false
-        type: boolean
-        default: true
   push:
     branches:
       - main
@@ -31,7 +20,6 @@ permissions:
 jobs:
   dispatch-docker:
     name: Dispatch Docker rolling benchmark
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_docker }}
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch Docker rolling benchmark
@@ -42,7 +30,6 @@ jobs:
 
   dispatch-streaming-docker:
     name: Dispatch Streaming Docker rolling benchmark
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_streaming_docker }}
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch Streaming Docker rolling benchmark
