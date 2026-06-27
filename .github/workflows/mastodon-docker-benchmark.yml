@@ -51,7 +51,6 @@ permissions:
   contents: read
   actions: write
   packages: read
-  packages: read
 
 jobs:
   github-actions-cache:
