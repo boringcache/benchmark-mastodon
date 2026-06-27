@@ -4,6 +4,17 @@ run-name: >-
 
 on:
   workflow_dispatch:
+    inputs:
+      prewarm_buildkit_image:
+        description: "Optional experimental BuildKit image. When set with prewarm_cli_image, the rolling run adds a BC BuildKit backend lane."
+        required: false
+        type: string
+        default: ""
+      prewarm_cli_image:
+        description: "Optional experimental Linux BoringCache CLI image. Used only by the experimental BuildKit lane."
+        required: false
+        type: string
+        default: ""
   schedule:
     - cron: "15 4 * * 2"
   pull_request:
@@ -24,6 +35,7 @@ concurrency:
 permissions:
   contents: read
   actions: write
+  packages: read
 
 jobs:
   github-actions-cache:
@@ -136,3 +148,38 @@ jobs:
           image_tag: mastodon-streaming-benchmark:latest
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
+
+  boringcache-buildkit-backend:
+    name: BC BuildKit Backend
+    if: ${{ github.event_name != 'pull_request' && (inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE) && (inputs.prewarm_cli_image || vars.MASTODON_PREWARM_CLI_IMAGE) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+      BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_API_TOKEN || secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_GHCR_READ_USER: ${{ vars.BORINGCACHE_GHCR_READ_USER || github.actor }}
+      BORINGCACHE_GHCR_READ_TOKEN: ${{ secrets.BORINGCACHE_GHCR_READ_TOKEN }}
+    steps:
+      - name: Checkout benchmark repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: BC BuildKit Backend
+        uses: ./.github/actions/docker-rolling-benchmark
+        with:
+          strategy: boringcache
+          buildkit_backend: registry
+          benchmark_id: mastodon-streaming-bc-buildkit
+          project_repo: mastodon/mastodon
+          dockerfile_path: upstream/streaming/Dockerfile
+          docker_context: upstream
+          image_tag: mastodon-streaming-benchmark:latest
+          cli_platform: linux-amd64
+          cli_image: ${{ inputs.prewarm_cli_image || vars.MASTODON_PREWARM_CLI_IMAGE }}
+          buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
+          benchmark_workspace: ${{ github.repository }}
+          cache_export_type: boringcache
