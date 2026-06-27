@@ -113,7 +113,7 @@ runs:
       with:
         registry: ghcr.io
         username: ${{ env.BORINGCACHE_GHCR_READ_USER || github.actor }}
-        password: ${{ env.BORINGCACHE_GHCR_READ_TOKEN }}
+        password: ${{ env.BORINGCACHE_GHCR_READ_TOKEN || github.token }}
 
     - name: Install BoringCache CLI with boringcache/one
       if: ${{ inputs.strategy == 'boringcache' }}
