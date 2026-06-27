@@ -10,10 +10,18 @@ inputs:
   buildkit_image:
     required: false
     default: mirror.gcr.io/moby/buildkit:buildx-stable-1
+  cache_export_type:
+    description: "Optional override for the BuildKit cache-to type. Used by experimental BuildKit lanes such as type=boringcache."
+    required: false
+    default: ""
   benchmark_id:
     required: true
   project_repo:
     required: true
+  project_ref:
+    description: "Optional upstream project ref/SHA to checkout after initializing the pinned submodule."
+    required: false
+    default: ""
   dockerfile_path:
     required: false
     default: upstream/Dockerfile
@@ -99,6 +107,14 @@ runs:
           exit 1
         fi
 
+    - name: Log in to private GHCR images
+      if: ${{ startsWith(inputs.buildkit_image, 'ghcr.io/') }}
+      uses: docker/login-action@v4.2.0
+      with:
+        registry: ghcr.io
+        username: ${{ env.BORINGCACHE_GHCR_READ_USER || github.actor }}
+        password: ${{ env.BORINGCACHE_GHCR_READ_TOKEN }}
+
     - name: Install BoringCache CLI with boringcache/one
       if: ${{ inputs.strategy == 'boringcache' }}
       uses: boringcache/one@v1
@@ -111,10 +127,21 @@ runs:
 
     - name: Checkout pinned upstream submodule shallowly
       shell: bash
+      env:
+        PROJECT_REF: ${{ inputs.project_ref }}
       run: |
         set -euo pipefail
         git submodule sync --recursive
         git -c protocol.version=2 submodule update --init --depth 1 --recommend-shallow --jobs 4 upstream
+        if [[ -n "$PROJECT_REF" ]]; then
+          if git -C upstream fetch --depth 1 origin "$PROJECT_REF"; then
+            git -C upstream checkout --detach FETCH_HEAD
+          else
+            git -C upstream fetch --depth 64 origin master || true
+            git -C upstream fetch --depth 64 origin main || true
+            git -C upstream checkout --detach "$PROJECT_REF"
+          fi
+        fi
 
     - name: Prepare base benchmark source tree
       shell: bash
@@ -305,6 +332,7 @@ runs:
       env:
         STRATEGY: ${{ inputs.strategy }}
         BUILDKIT_BACKEND: ${{ inputs.buildkit_backend }}
+        BORINGCACHE_CACHE_EXPORT_TYPE: ${{ inputs.cache_export_type }}
         BORINGCACHE_MANAGED_BUILDKIT_IMAGE: ${{ inputs.buildkit_image }}
         BUILDKIT_IMAGE: ${{ inputs.buildkit_image }}
         BENCHMARK_ID: ${{ inputs.benchmark_id }}
@@ -587,6 +615,7 @@ runs:
         if [[ "$STRATEGY" == "boringcache" || "$STRATEGY" == "ecr-cache" ]]; then
           cache_import_status="${{ steps.build.outputs.cache_import_status }}"
         fi
+        project_ref="$(git -C upstream rev-parse HEAD 2>/dev/null || git rev-parse HEAD:upstream)"
 
         ./scripts/write-benchmark-artifacts.sh \
           --benchmark "$BENCHMARK_ID" \
@@ -595,7 +624,7 @@ runs:
           --mode docker \
           --adapter oci \
           --project-repo "$PROJECT_REPO" \
-          --project-ref "$(git rev-parse HEAD:upstream)" \
+          --project-ref "$project_ref" \
           --cold-seconds "${{ steps.build.outputs.seconds }}" \
           --cold-build-seconds "${{ steps.build.outputs.build_seconds }}" \
           --warm1-seconds "" \
@@ -605,6 +634,8 @@ runs:
           --docker-cache-import-seconds "${{ steps.build.outputs.docker_cache_import_seconds }}" \
           --docker-cache-export-seconds "${{ steps.build.outputs.docker_cache_export_seconds }}" \
           --buildkit-cached-steps "${{ steps.build.outputs.buildkit_cached_steps }}" \
+          --buildkit-image "${{ inputs.buildkit_image }}" \
+          --buildkit-cache-export-type "${{ inputs.cache_export_type }}" \
           --cache-storage-bytes "${{ steps.storage.outputs.bytes }}" \
           --cache-storage-source "${{ steps.storage.outputs.source }}" \
           --storage-breakdown-json "${{ steps.storage.outputs.breakdown_path }}" \

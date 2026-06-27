@@ -4,6 +4,27 @@ run-name: >-
 
 on:
   workflow_dispatch:
+    inputs:
+      prewarm_buildkit_image:
+        description: "Optional experimental BuildKit image. When set, the rolling run adds a BC BuildKit backend lane."
+        required: false
+        type: string
+        default: ""
+      prewarm_benchmark_id:
+        description: "Optional benchmark/cache scope for the experimental BuildKit lane."
+        required: false
+        type: string
+        default: ""
+      benchmark_id_suffix:
+        description: "Optional suffix appended to built-in benchmark/cache scopes for isolated comparison runs."
+        required: false
+        type: string
+        default: ""
+      upstream_ref:
+        description: "Optional Mastodon ref/SHA to benchmark instead of the pinned upstream submodule commit."
+        required: false
+        type: string
+        default: ""
   schedule:
     - cron: "0 4 * * 2"
   pull_request:
@@ -24,6 +45,7 @@ concurrency:
 permissions:
   contents: read
   actions: write
+  packages: read
 
 jobs:
   github-actions-cache:
@@ -43,8 +65,9 @@ jobs:
         uses: ./.github/actions/docker-rolling-benchmark
         with:
           strategy: actions-cache
-          benchmark_id: mastodon
+          benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
+          project_ref: ${{ inputs.upstream_ref }}
           dockerfile_path: upstream/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
@@ -69,8 +92,9 @@ jobs:
         uses: ./.github/actions/docker-rolling-benchmark
         with:
           strategy: ecr-cache
-          benchmark_id: mastodon
+          benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
+          project_ref: ${{ inputs.upstream_ref }}
           dockerfile_path: upstream/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
@@ -101,8 +125,9 @@ jobs:
         with:
           strategy: boringcache
           buildkit_backend: registry
-          benchmark_id: mastodon
+          benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
+          project_ref: ${{ inputs.upstream_ref }}
           dockerfile_path: upstream/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
@@ -129,10 +154,46 @@ jobs:
         with:
           strategy: boringcache
           buildkit_backend: native
-          benchmark_id: mastodon-native
+          benchmark_id: ${{ format('mastodon-native{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
+          project_ref: ${{ inputs.upstream_ref }}
           dockerfile_path: upstream/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
+
+  boringcache-prewarm-buildkit:
+    name: BC BuildKit Backend
+    if: ${{ github.event_name != 'pull_request' && inputs.prewarm_buildkit_image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+      BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_API_TOKEN || secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_GHCR_READ_USER: ${{ vars.BORINGCACHE_GHCR_READ_USER || github.actor }}
+      BORINGCACHE_GHCR_READ_TOKEN: ${{ secrets.BORINGCACHE_GHCR_READ_TOKEN }}
+    steps:
+      - name: Checkout benchmark repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: BC BuildKit Backend
+        uses: ./.github/actions/docker-rolling-benchmark
+        with:
+          strategy: boringcache
+          buildkit_backend: registry
+          benchmark_id: ${{ inputs.prewarm_benchmark_id != '' && inputs.prewarm_benchmark_id || format('mastodon-bc-buildkit{0}', inputs.benchmark_id_suffix) }}
+          project_repo: mastodon/mastodon
+          project_ref: ${{ inputs.upstream_ref }}
+          dockerfile_path: upstream/Dockerfile
+          docker_context: upstream
+          image_tag: mastodon-benchmark:latest
+          cli_platform: linux-amd64
+          buildkit_image: ${{ inputs.prewarm_buildkit_image }}
+          benchmark_workspace: ${{ github.repository }}
+          cache_export_type: boringcache
