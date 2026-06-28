@@ -664,12 +664,10 @@ runs:
           cache_summary_args=(--cache-session-summary-json benchmark-session-summary/benchmark-session-summary.json)
         fi
         native_tool_args=()
-        if [[ -s benchmark-native-tool/native-tool.json ]]; then
-          native_tool_args=(--native-tool-evidence-json benchmark-native-tool/native-tool.json)
-        fi
-        sccache_stats_args=()
         if [[ -s benchmark-sccache/sccache-stats.txt ]]; then
-          sccache_stats_args=(--sccache-stats-file benchmark-sccache/sccache-stats.txt)
+          native_tool_args=(--native-tool sccache --sccache-stats-file benchmark-sccache/sccache-stats.txt)
+        elif [[ -s benchmark-native-tool/native-tool.json ]]; then
+          native_tool_args=(--native-tool-evidence-json benchmark-native-tool/native-tool.json)
         fi
 
         cache_import_status=""
@@ -720,8 +718,7 @@ runs:
           --reseed-new-blob-threshold "0" \
           --hit-behavior-note "Rolling lane: one continuous-commit build imports the prior branch/default Docker cache, exports the updated cache, and records that commit build only." \
           "${cache_summary_args[@]}" \
-          "${native_tool_args[@]}" \
-          "${sccache_stats_args[@]}"
+          "${native_tool_args[@]}"
 
     - name: Upload benchmark artifacts
       uses: actions/upload-artifact@v6
