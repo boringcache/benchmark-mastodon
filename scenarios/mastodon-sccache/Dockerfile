@@ -250,7 +250,7 @@ RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
   if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
     . /run/secrets/boringcache-tool-cache-env; \
     export SCCACHE_ERROR_LOG=/tmp/boringcache-sccache-libvips.log; \
-    sccache --start-server; \
+    sccache --start-server || true; \
   fi; \
   ninja && ninja install; \
   if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
@@ -280,7 +280,7 @@ RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
   if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
     . /run/secrets/boringcache-tool-cache-env; \
     export SCCACHE_ERROR_LOG=/tmp/boringcache-sccache-ffmpeg.log; \
-    sccache --start-server; \
+    sccache --start-server || true; \
   fi; \
   configure_compiler_args=(); \
   if [ -n "${CC:-}" ]; then \
