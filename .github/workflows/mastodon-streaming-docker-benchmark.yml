@@ -115,6 +115,10 @@ jobs:
           image_tag: mastodon-streaming-benchmark:latest
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
+
+  # No Docker +toolcache lanes here yet: the streaming image only runs yarn
+  # install/focus work in Docker, not a stable supported turbo/nx/sccache
+  # contract that the BoringCache Docker tool-cache adapter can source.
   boringcache-native:
     name: BC Native
     runs-on: ubuntu-latest

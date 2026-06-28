@@ -32,9 +32,9 @@ The benchmark has two Docker surfaces:
 
 Rolling dispatch runs the combined main Docker benchmark and the streaming Docker pair on every upstream sync commit. The retired dependency-directory package-CAS benchmark set has been removed.
 
-BoringCache compares the explicit registry/OCI cache path with the explicit native BuildKit path. It does not call BoringCache inside Dockerfile `RUN` steps, and upstream Dockerfile cache mounts stay native to BuildKit.
+BoringCache compares the explicit registry/OCI cache path, the explicit native BuildKit path, and the experimental BuildKit backend path. It does not call BoringCache inside Dockerfile `RUN` steps, and upstream Dockerfile cache mounts stay native to BuildKit.
 
-The main Docker workflow is [`.github/workflows/mastodon-docker-benchmark.yml`](.github/workflows/mastodon-docker-benchmark.yml), which runs GitHub Actions Cache, BoringCache OCI, and BoringCache Native side by side. The provider-specific main Docker workflows remain for manual diagnostics.
+The main Docker workflow is [`.github/workflows/mastodon-docker-benchmark.yml`](.github/workflows/mastodon-docker-benchmark.yml), which runs GitHub Actions Cache, ECR, BoringCache OCI, BoringCache Native, and the experimental BoringCache BuildKit backend side by side. Docker tool-cache lanes are intentionally absent until Mastodon has a static supported Turbo/Nx/sccache contract inside the measured Dockerfile.
 
 ## Output
 
