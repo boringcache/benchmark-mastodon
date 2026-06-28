@@ -3,12 +3,14 @@ set -euo pipefail
 
 proxy_port="${BORINGCACHE_PROXY_PORT:-5000}"
 proxy_log="${BORINGCACHE_PROXY_LOG_PATH:-/tmp/boringcache-proxy-${proxy_port}.log}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build_log="$(mktemp /tmp/boringcache-build.XXXXXX.log)"
 status_snapshot_path="$(mktemp /tmp/boringcache-status.XXXXXX.json)"
 max_attempts=1
 cache_export_pattern='expected sha256:.*got sha256:e3b0|error writing layer blob|400 Bad Request|broken pipe'
 mode="${1:-full}"
 backend="${BUILDKIT_BACKEND:-registry}"
+docker_tool_cache="${BORINGCACHE_DOCKER_TOOL_CACHE:-}"
 cache_export_type="${BORINGCACHE_CACHE_EXPORT_TYPE:-}"
 effective_cache_to=""
 cache_import_ready="${BORINGCACHE_CACHE_IMPORT_READY:-true}"
@@ -22,9 +24,59 @@ oci_hydration="${BORINGCACHE_OCI_HYDRATION:-metadata-only}"
 native_tool_evidence_dir="$(mktemp -d /tmp/boringcache-native-tool.XXXXXX)"
 chmod 0777 "$native_tool_evidence_dir" 2>/dev/null || true
 native_tool_evidence_path="${native_tool_evidence_dir}/native-tool.json"
+sccache_stats_path="${native_tool_evidence_dir}/sccache-stats.txt"
 export BORINGCACHE_OBSERVABILITY_INCLUDE_CACHE_OPS="${BORINGCACHE_OBSERVABILITY_INCLUDE_CACHE_OPS:-1}"
 start_proxy() { :; }
 stop_proxy() { :; }
+
+docker_tool_cache_enabled() {
+  local requested_tool="$1"
+  local tool
+  for tool in ${docker_tool_cache//,/ }; do
+    tool="${tool%%:*}"
+    [[ "$tool" == "$requested_tool" ]] && return 0
+  done
+  return 1
+}
+
+resolve_docker_tool_cache_value() {
+  local value="$1"
+  local tool="${value%%:*}"
+
+  if [[ "$value" == *:* ]]; then
+    printf '%s\n' "$value"
+  else
+    printf '%s:%s-%s\n' "$tool" "${CACHE_SCOPE:?Set CACHE_SCOPE}" "$tool"
+  fi
+}
+
+use_wrapped_boringcache_build() {
+  [[ "$backend" == "native" || -n "$docker_tool_cache" ]]
+}
+
+verify_mastodon_sccache_tool_cache_contract() {
+  docker_tool_cache_enabled sccache || return 0
+
+  local dockerfile_path="${DOCKERFILE_PATH:-}"
+  local dockerfile="${repo_root}/${dockerfile_path}"
+  if [[ ! -f "$dockerfile" ]]; then
+    echo "Docker tool-cache sccache requested, but Dockerfile does not exist: ${dockerfile_path:-none}" >&2
+    exit 1
+  fi
+
+  if ! grep -q "boringcache-tool-cache-env" "$dockerfile"; then
+    echo "Docker tool-cache sccache requested, but ${dockerfile_path} does not declare the static boringcache-tool-cache-env secret mount." >&2
+    echo "Use scenarios/mastodon-sccache/Dockerfile or another committed Dockerfile with the stable tool-cache contract." >&2
+    exit 1
+  fi
+
+  if ! grep -q "BEGIN_BORINGCACHE_SCCACHE_STATS" "$dockerfile"; then
+    echo "Docker tool-cache sccache requested, but ${dockerfile_path} does not emit sccache stats markers." >&2
+    exit 1
+  fi
+
+  echo "Verified BoringCache sccache secret mounts in ${dockerfile_path}"
+}
 ensure_proxy_available() {
   local started elapsed
   started="$(date +%s)"
@@ -145,6 +197,12 @@ write_build_metrics() {
   fi
   if [[ -n "${BORINGCACHE_OCI_STREAM_THROUGH_MIN_BYTES:-}" ]]; then
     echo "oci_stream_through_min_bytes=${BORINGCACHE_OCI_STREAM_THROUGH_MIN_BYTES}" >> "$output_path"
+  fi
+  if [[ -n "$docker_tool_cache" ]]; then
+    echo "docker_tool_cache=${docker_tool_cache}" >> "$output_path"
+  fi
+  if [[ -s "$sccache_stats_path" ]]; then
+    echo "sccache_stats_file=$sccache_stats_path" >> "$output_path"
   fi
   if [[ "$backend" == "native" ]]; then
     echo "buildkit_backend=native" >> "$output_path"
@@ -270,6 +328,83 @@ capture_proxy_status() {
   curl -fsS "http://127.0.0.1:${proxy_port}/_boringcache/status" -o "$output_path" 2>/dev/null || true
 }
 
+extract_sccache_stats() {
+  docker_tool_cache_enabled sccache || return 0
+  if ! grep -q "BEGIN_BORINGCACHE_SCCACHE_STATS" "$build_log"; then
+    return 0
+  fi
+
+  awk '
+    BEGIN {
+      labels["Compile requests"] = 1
+      labels["Compile requests executed"] = 1
+      labels["Cache hits"] = 1
+      labels["Cache hits (C/C++)"] = 1
+      labels["Cache misses"] = 1
+      labels["Cache misses (C/C++)"] = 1
+      labels["Non-cacheable calls"] = 1
+      labels["Non-cacheable compilations"] = 1
+      labels["Cache errors"] = 1
+      labels["Cache read errors"] = 1
+      labels["Cache write errors"] = 1
+      labels["Cache timeouts"] = 1
+      order[++order_len] = "Compile requests"
+      order[++order_len] = "Compile requests executed"
+      order[++order_len] = "Cache hits"
+      order[++order_len] = "Cache hits (C/C++)"
+      order[++order_len] = "Cache misses"
+      order[++order_len] = "Cache misses (C/C++)"
+      order[++order_len] = "Non-cacheable calls"
+      order[++order_len] = "Non-cacheable compilations"
+      order[++order_len] = "Cache errors"
+      order[++order_len] = "Cache read errors"
+      order[++order_len] = "Cache write errors"
+      order[++order_len] = "Cache timeouts"
+    }
+    /BEGIN_BORINGCACHE_SCCACHE_STATS/ {
+      in_stats = 1
+      next
+    }
+    /END_BORINGCACHE_SCCACHE_STATS/ {
+      in_stats = 0
+      next
+    }
+    in_stats {
+      line = $0
+      sub(/^.*#?[0-9]+[[:space:]][0-9]+([.][0-9]+)?[[:space:]]+/, "", line)
+      sub(/^[[:space:]]+/, "", line)
+      for (label in labels) {
+        if (substr(line, 1, length(label)) != label) {
+          continue
+        }
+        rest = substr(line, length(label) + 1)
+        if (rest !~ /^[[:space:]][[:space:]]+/) {
+          continue
+        }
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", rest)
+        gsub(/,/, "", rest)
+        if (rest ~ /^[0-9]+$/) {
+          totals[label] += rest
+          seen[label] = 1
+        }
+      }
+    }
+    END {
+      print "sccache stats aggregated from Docker RUN blocks"
+      for (i = 1; i <= order_len; i++) {
+        label = order[i]
+        if (seen[label]) {
+          printf "%-32s %s\n", label, totals[label]
+        }
+      }
+    }
+  ' "$build_log" > "$sccache_stats_path"
+
+  if ! grep -q "^Compile requests" "$sccache_stats_path"; then
+    rm -f "$sccache_stats_path"
+  fi
+}
+
 cache_from_requested() {
   [[ "$mode" =~ ^(full|partial-warm)$ ]] && { [[ -n "$cache_requested_from_refs" ]] || [[ -n "${CACHE_FROM:-}" ]]; }
 }
@@ -350,6 +485,8 @@ write_build_diagnostics() {
     echo "cache_to=${effective_cache_to:-${CACHE_TO:-}}"
     echo "cache_export_type=${cache_export_type:-}"
     echo "registry_proxy_tags=${BORINGCACHE_REGISTRY_PROXY_TAGS:-}"
+    echo "docker_tool_cache=${docker_tool_cache}"
+    echo "sccache_stats_file=${sccache_stats_path}"
     echo "blob_download_concurrency_override=${BORINGCACHE_BLOB_DOWNLOAD_CONCURRENCY:-}"
     echo "blob_prefetch_concurrency_override=${BORINGCACHE_BLOB_PREFETCH_CONCURRENCY:-}"
     echo "oci_stream_through_min_bytes=${BORINGCACHE_OCI_STREAM_THROUGH_MIN_BYTES:-}"
@@ -382,6 +519,11 @@ write_build_diagnostics() {
       jq -c '{restore, publisher, command, publish}' "$native_tool_evidence_path" 2>/dev/null || cat "$native_tool_evidence_path"
       echo "EOF"
     fi
+    if [[ -s "$sccache_stats_path" ]]; then
+      echo "sccache_stats<<EOF"
+      cat "$sccache_stats_path"
+      echo "EOF"
+    fi
     if [[ -n "$observability_path" && -s "$observability_path" ]]; then
       printf 'observability_events='
       wc -l < "$observability_path" | tr -d ' '
@@ -393,7 +535,7 @@ write_build_diagnostics() {
   } > "$output_path"
 }
 
-run_native_build() {
+run_wrapped_boringcache_build() {
   local phase_hint="cold"
   if [[ "$mode" == "partial-warm" ]]; then
     phase_hint="warm"
@@ -405,7 +547,7 @@ run_native_build() {
     boringcache docker
     --workspace "${BENCHMARK_WORKSPACE:?Set BENCHMARK_WORKSPACE}"
     --tag "${CACHE_SCOPE:?Set CACHE_SCOPE}"
-    --backend native
+    --backend "$backend"
     --port "$proxy_port"
     --cache-mode max
     --no-platform
@@ -414,10 +556,24 @@ run_native_build() {
     --metadata-hint "benchmark=${BENCHMARK_ID:-docker}"
     --metadata-hint "phase=${phase_hint}"
     --metadata-hint "lane=${CACHE_LANE:-fresh}"
-    --metadata-hint "backend=native"
-    --native-tool-evidence-json "$native_tool_evidence_path"
+    --metadata-hint "backend=${backend}"
     --fail-on-cache-error
   )
+
+  if [[ "$backend" == "native" ]]; then
+    boringcache_args+=(--native-tool-evidence-json "$native_tool_evidence_path")
+  fi
+
+  if [[ -n "$docker_tool_cache" ]]; then
+    local tool_cache_value
+    local resolved_tool_cache_value
+    for tool_cache_value in ${docker_tool_cache//,/ }; do
+      [[ -n "$tool_cache_value" ]] || continue
+      resolved_tool_cache_value="$(resolve_docker_tool_cache_value "$tool_cache_value")"
+      boringcache_args+=(--tool-cache "$resolved_tool_cache_value")
+    done
+  fi
+
   if [[ "$mode" == "partial-warm" ]]; then
     boringcache_args+=(--read-only)
   fi
@@ -431,6 +587,14 @@ run_native_build() {
     builder_args=(--builder "$BUILDER")
   fi
 
+  local wrapped_cache_args=()
+  local cache_arg
+  for cache_arg in "${cache_args[@]}"; do
+    if [[ "$cache_arg" == "--no-cache" ]]; then
+      wrapped_cache_args+=("$cache_arg")
+    fi
+  done
+
   : > "$build_log"
   set +e
   DOCKER_BUILDKIT=1 BORINGCACHE_TIMING_TRACE=1 "${boringcache_cmd[@]}" "${boringcache_args[@]:1}" -- \
@@ -440,7 +604,7 @@ run_native_build() {
     --tag "$IMAGE_TAG" \
     --progress=plain \
     "${extra_args[@]}" \
-    "${cache_args[@]}" \
+    "${wrapped_cache_args[@]}" \
     "${output_args[@]}" \
     "$BENCHMARK_DOCKER_CONTEXT" 2>&1 | tee "$build_log"
   status=${PIPESTATUS[0]}
@@ -449,6 +613,7 @@ run_native_build() {
 
 
 attempt=1
+verify_mastodon_sccache_tool_cache_contract
 while true; do
   cache_args=()
   extra_args=()
@@ -499,8 +664,8 @@ while true; do
     exit 1
   fi
 
-  if [[ "$backend" == "native" ]]; then
-    run_native_build
+  if use_wrapped_boringcache_build; then
+    run_wrapped_boringcache_build
   else
     require_readable_cache_import
     start_proxy
@@ -533,6 +698,7 @@ while true; do
   fi
 
   if [[ "$status" -eq 0 ]]; then
+    extract_sccache_stats
     import_status="$(build_import_status)"
     if [[ "$mode" == "partial-warm" && "$import_status" != "ok" ]]; then
       capture_proxy_status

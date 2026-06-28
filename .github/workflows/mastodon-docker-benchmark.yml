@@ -63,7 +63,7 @@ jobs:
           benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: upstream/Dockerfile
+          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           benchmark_workspace: ${{ github.repository }}
@@ -90,7 +90,7 @@ jobs:
           benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: upstream/Dockerfile
+          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           benchmark_workspace: ${{ github.repository }}
@@ -123,15 +123,43 @@ jobs:
           benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: upstream/Dockerfile
+          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
 
-  # No Docker +toolcache lanes here yet: the Mastodon image does not expose a
-  # stable supported turbo/nx/sccache secret contract inside the measured
-  # Dockerfile, so adding one would mutate the graph instead of measuring it.
+  boringcache-oci-toolcache:
+    name: BC OCI + sccache
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+      BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_API_TOKEN || secrets.BORINGCACHE_RESTORE_TOKEN }}
+    steps:
+      - name: Checkout benchmark repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: BC OCI + sccache
+        uses: ./.github/actions/docker-rolling-benchmark
+        with:
+          strategy: boringcache
+          buildkit_backend: registry
+          benchmark_id: ${{ format('mastodon-oci-sccache{0}', inputs.benchmark_id_suffix) }}
+          project_repo: mastodon/mastodon
+          project_ref: ${{ inputs.upstream_ref }}
+          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
+          docker_context: upstream
+          image_tag: mastodon-benchmark:latest
+          cli_platform: linux-amd64
+          benchmark_workspace: ${{ github.repository }}
+          docker_tool_cache: sccache
+
   boringcache-native:
     name: BC Native
     runs-on: ubuntu-latest
@@ -156,11 +184,42 @@ jobs:
           benchmark_id: ${{ format('mastodon-native{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: upstream/Dockerfile
+          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
+
+  boringcache-native-toolcache:
+    name: BC Native + sccache
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+      BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_API_TOKEN || secrets.BORINGCACHE_RESTORE_TOKEN }}
+    steps:
+      - name: Checkout benchmark repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: BC Native + sccache
+        uses: ./.github/actions/docker-rolling-benchmark
+        with:
+          strategy: boringcache
+          buildkit_backend: native
+          benchmark_id: ${{ format('mastodon-native-sccache{0}', inputs.benchmark_id_suffix) }}
+          project_repo: mastodon/mastodon
+          project_ref: ${{ inputs.upstream_ref }}
+          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
+          docker_context: upstream
+          image_tag: mastodon-benchmark:latest
+          cli_platform: linux-amd64
+          benchmark_workspace: ${{ github.repository }}
+          docker_tool_cache: sccache
 
   boringcache-prewarm-buildkit:
     name: BC BuildKit Backend
@@ -189,10 +248,46 @@ jobs:
           benchmark_id: ${{ format('mastodon-bc-buildkit{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: upstream/Dockerfile
+          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           cli_platform: linux-amd64
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
           benchmark_workspace: ${{ github.repository }}
           cache_export_type: boringcache
+
+  boringcache-prewarm-buildkit-toolcache:
+    name: BC BuildKit Backend + sccache
+    if: ${{ github.event_name != 'pull_request' && (inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+      BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_API_TOKEN || secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_GHCR_READ_USER: ${{ vars.BORINGCACHE_GHCR_READ_USER || github.actor }}
+      BORINGCACHE_GHCR_READ_TOKEN: ${{ secrets.BORINGCACHE_GHCR_READ_TOKEN }}
+    steps:
+      - name: Checkout benchmark repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: BC BuildKit Backend + sccache
+        uses: ./.github/actions/docker-rolling-benchmark
+        with:
+          strategy: boringcache
+          buildkit_backend: registry
+          benchmark_id: ${{ format('mastodon-bc-buildkit-sccache{0}', inputs.benchmark_id_suffix) }}
+          project_repo: mastodon/mastodon
+          project_ref: ${{ inputs.upstream_ref }}
+          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
+          docker_context: upstream
+          image_tag: mastodon-benchmark:latest
+          cli_platform: linux-amd64
+          buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
+          benchmark_workspace: ${{ github.repository }}
+          cache_export_type: boringcache
+          docker_tool_cache: sccache
