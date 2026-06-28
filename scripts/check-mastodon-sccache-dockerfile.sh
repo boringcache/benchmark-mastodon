@@ -31,6 +31,7 @@ awk '
       print "RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \\"
       print "  if [ -f /run/secrets/boringcache-tool-cache-env ]; then \\"
       print "    . /run/secrets/boringcache-tool-cache-env; \\"
+      print "    export SCCACHE_SERVER_PORT=42262; \\"
       print "    export SCCACHE_ERROR_LOG=/tmp/boringcache-sccache-ffmpeg.log; \\"
       print "    sccache --start-server || true; \\"
       print "  fi; \\"
@@ -126,6 +127,7 @@ awk '
     print "RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \\"
     print "  if [ -f /run/secrets/boringcache-tool-cache-env ]; then \\"
     print "    . /run/secrets/boringcache-tool-cache-env; \\"
+    print "    export SCCACHE_SERVER_PORT=42261; \\"
     print "  fi; \\"
     print "  meson setup build --prefix /usr/local/libvips --libdir=lib -Ddeprecated=false -Dintrospection=disabled -Dmodules=disabled -Dexamples=false"
     libvips_setup += 1
@@ -136,6 +138,7 @@ awk '
     print "RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \\"
     print "  if [ -f /run/secrets/boringcache-tool-cache-env ]; then \\"
     print "    . /run/secrets/boringcache-tool-cache-env; \\"
+    print "    export SCCACHE_SERVER_PORT=42261; \\"
     print "    export SCCACHE_ERROR_LOG=/tmp/boringcache-sccache-libvips.log; \\"
     print "    sccache --start-server || true; \\"
     print "  fi; \\"

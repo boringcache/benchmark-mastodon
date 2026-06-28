@@ -240,6 +240,7 @@ WORKDIR /usr/local/libvips/src/vips-${VIPS_VERSION}
 RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
   if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
     . /run/secrets/boringcache-tool-cache-env; \
+    export SCCACHE_SERVER_PORT=42261; \
   fi; \
   meson setup build --prefix /usr/local/libvips --libdir=lib -Ddeprecated=false -Dintrospection=disabled -Dmodules=disabled -Dexamples=false
 
@@ -249,6 +250,7 @@ WORKDIR /usr/local/libvips/src/vips-${VIPS_VERSION}/build
 RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
   if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
     . /run/secrets/boringcache-tool-cache-env; \
+    export SCCACHE_SERVER_PORT=42261; \
     export SCCACHE_ERROR_LOG=/tmp/boringcache-sccache-libvips.log; \
     sccache --start-server || true; \
   fi; \
@@ -279,6 +281,7 @@ WORKDIR /usr/local/ffmpeg/src/ffmpeg-${FFMPEG_VERSION}
 RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
   if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
     . /run/secrets/boringcache-tool-cache-env; \
+    export SCCACHE_SERVER_PORT=42262; \
     export SCCACHE_ERROR_LOG=/tmp/boringcache-sccache-ffmpeg.log; \
     sccache --start-server || true; \
   fi; \
