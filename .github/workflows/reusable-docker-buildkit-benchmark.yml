@@ -314,6 +314,11 @@ jobs:
                 mkdir -p benchmark-native-tool
                 cp "$native_tool_evidence" benchmark-native-tool/native-tool.json
               fi
+              sccache_stats_file="$(grep "^sccache_stats_file=" "$metrics_file" | head -n1 | cut -d= -f2- || true)"
+              if [[ -n "$sccache_stats_file" && -s "$sccache_stats_file" ]]; then
+                mkdir -p benchmark-sccache
+                cp "$sccache_stats_file" benchmark-sccache/sccache-stats.txt
+              fi
             fi
           else
             build_log="$(mktemp /tmp/${BENCHMARK_ID}-ac-build.XXXXXX.log)"
@@ -432,6 +437,14 @@ jobs:
           path: benchmark-native-tool/native-tool.json
           if-no-files-found: ignore
 
+      - name: Upload sccache stats
+        if: inputs.strategy == 'boringcache' && inputs.docker_tool_cache != '' && always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-sccache-${{ inputs.benchmark_id }}-boringcache-${{ inputs.cache_lane }}-build
+          path: benchmark-sccache/sccache-stats.txt
+          if-no-files-found: ignore
+
       - name: Prepare warm source tree
         if: inputs.cache_lane != 'rolling'
         run: ./scripts/prepare-source.sh warm1
@@ -545,6 +558,11 @@ jobs:
               if [[ "$BUILDKIT_BACKEND" == "native" && -n "$native_tool_evidence" && -s "$native_tool_evidence" ]]; then
                 mkdir -p benchmark-native-tool
                 cp "$native_tool_evidence" benchmark-native-tool/native-tool.json
+              fi
+              sccache_stats_file="$(grep "^sccache_stats_file=" "$metrics_file" | head -n1 | cut -d= -f2- || true)"
+              if [[ -n "$sccache_stats_file" && -s "$sccache_stats_file" ]]; then
+                mkdir -p benchmark-sccache
+                cp "$sccache_stats_file" benchmark-sccache/sccache-stats.txt
               fi
             fi
           else
@@ -689,6 +707,14 @@ jobs:
         with:
           name: benchmark-native-tool-${{ inputs.benchmark_id }}-boringcache-${{ inputs.cache_lane }}-warm
           path: benchmark-native-tool/native-tool.json
+          if-no-files-found: ignore
+
+      - name: Upload sccache stats
+        if: inputs.cache_lane != 'rolling' && inputs.strategy == 'boringcache' && inputs.docker_tool_cache != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-sccache-${{ inputs.benchmark_id }}-boringcache-${{ inputs.cache_lane }}-warm
+          path: benchmark-sccache/sccache-stats.txt
           if-no-files-found: ignore
 
       - name: Checkout benchmark repo helpers
@@ -968,7 +994,9 @@ jobs:
             cache_summary_args=(--cache-session-summary-json benchmark-session-summary/benchmark-session-summary.json)
           fi
           native_tool_args=()
-          if [[ -s benchmark-native-tool/native-tool.json ]]; then
+          if [[ -s benchmark-sccache/sccache-stats.txt ]]; then
+            native_tool_args=(--sccache-stats-file benchmark-sccache/sccache-stats.txt)
+          elif [[ -s benchmark-native-tool/native-tool.json ]]; then
             native_tool_args=(--native-tool-evidence-json benchmark-native-tool/native-tool.json)
           fi
 
