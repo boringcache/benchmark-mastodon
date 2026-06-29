@@ -24,6 +24,8 @@ awk '
     ffmpeg_workdir = 0
     skipping_ffmpeg_run = 0
     ffmpeg_compile = 0
+    in_ruby_build = 0
+    ruby_build_apt_update = 0
   }
 
   skipping_ffmpeg_run {
@@ -82,6 +84,13 @@ awk '
 
   /^FROM / {
     in_media_build = 0
+    in_ruby_build = 0
+  }
+
+  /^FROM ruby AS ruby-build$/ {
+    in_ruby_build = 1
+    print
+    next
   }
 
   /^FROM .* AS media-build$/ {
@@ -120,6 +129,13 @@ awk '
     print "  chmod +x /usr/local/bin/sccache; \\"
     print "  sccache --version"
     media_sccache_install += 1
+    next
+  }
+
+  in_ruby_build && $0 == "  # Install build tools and bundler dependencies from APT" {
+    print
+    print "  apt-get update; \\"
+    ruby_build_apt_update += 1
     next
   }
 
@@ -176,13 +192,15 @@ awk '
     if (media_sccache_arg != 1 ||
         media_sccache_deps != 1 ||
         media_sccache_install != 1 ||
+        ruby_build_apt_update != 1 ||
         libvips_setup != 1 ||
         libvips_compile != 1 ||
         ffmpeg_compile != 1) {
-      printf "unexpected Mastodon sccache Dockerfile hook count: arg=%d deps=%d install=%d libvips_setup=%d libvips_compile=%d ffmpeg_compile=%d\n",
+      printf "unexpected Mastodon sccache Dockerfile hook count: arg=%d deps=%d install=%d ruby_build_apt_update=%d libvips_setup=%d libvips_compile=%d ffmpeg_compile=%d\n",
         media_sccache_arg,
         media_sccache_deps,
         media_sccache_install,
+        ruby_build_apt_update,
         libvips_setup,
         libvips_compile,
         ffmpeg_compile > "/dev/stderr"
