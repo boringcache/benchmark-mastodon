@@ -180,4 +180,4 @@ jobs:
           cli_platform: linux-amd64
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
           benchmark_workspace: ${{ github.repository }}
-          cache_export_type: boringcache
+          buildkit_cache_backend: boringcache

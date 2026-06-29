@@ -113,6 +113,7 @@ docker_cache_import_seconds=""
 docker_cache_export_seconds=""
 buildkit_cached_steps="${BENCHMARK_BUILDKIT_CACHED_STEPS:-}"
 buildkit_image="${BENCHMARK_BUILDKIT_IMAGE:-${BUILDKIT_IMAGE:-}}"
+buildkit_cache_backend="${BENCHMARK_BUILDKIT_CACHE_BACKEND:-${BORINGCACHE_BUILDKIT_CACHE_BACKEND:-${BENCHMARK_BUILDKIT_CACHE_EXPORT_TYPE:-${BORINGCACHE_CACHE_EXPORT_TYPE:-}}}}"
 buildkit_cache_export_type="${BENCHMARK_BUILDKIT_CACHE_EXPORT_TYPE:-${BORINGCACHE_CACHE_EXPORT_TYPE:-}}"
 oci_hydration_policy=""
 oci_body_local_hits=""
@@ -358,6 +359,11 @@ while [[ $# -gt 0 ]]; do
       buildkit_image="$2"
       shift 2
       ;;
+    --buildkit-cache-backend)
+      buildkit_cache_backend="$2"
+      shift 2
+      ;;
+
     --buildkit-cache-export-type)
       buildkit_cache_export_type="$2"
       shift 2
@@ -1930,6 +1936,7 @@ cat > "$json_path" <<JSON
   },
   "docker_cache": {
     "buildkit_image": $(json_string_or_null "$buildkit_image"),
+    "buildkit_cache_backend": $(json_string_or_null "$buildkit_cache_backend"),
     "buildkit_cache_export_type": $(json_string_or_null "$buildkit_cache_export_type"),
     "import_seconds": $(json_num_or_null "$docker_cache_import_seconds"),
     "export_seconds": $(json_num_or_null "$docker_cache_export_seconds"),
@@ -2060,6 +2067,9 @@ JSON
   fi
   if [[ -n "$buildkit_image" ]]; then
     echo "| BuildKit image | \`${buildkit_image}\` |"
+  fi
+  if [[ -n "$buildkit_cache_backend" ]]; then
+    echo "| BuildKit cache backend | \`${buildkit_cache_backend}\` |"
   fi
   if [[ -n "$buildkit_cache_export_type" ]]; then
     echo "| BuildKit cache export type | \`${buildkit_cache_export_type}\` |"

@@ -63,7 +63,7 @@ jobs:
           benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
+          dockerfile_path: upstream/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           benchmark_workspace: ${{ github.repository }}
@@ -90,7 +90,7 @@ jobs:
           benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
+          dockerfile_path: upstream/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           benchmark_workspace: ${{ github.repository }}
@@ -123,7 +123,7 @@ jobs:
           benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
+          dockerfile_path: upstream/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           cli_platform: linux-amd64
@@ -184,7 +184,7 @@ jobs:
           benchmark_id: ${{ format('mastodon-native{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
+          dockerfile_path: upstream/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           cli_platform: linux-amd64
@@ -248,13 +248,13 @@ jobs:
           benchmark_id: ${{ format('mastodon-bc-buildkit{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
+          dockerfile_path: upstream/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
           cli_platform: linux-amd64
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
           benchmark_workspace: ${{ github.repository }}
-          cache_export_type: boringcache
+          buildkit_cache_backend: boringcache
 
   boringcache-prewarm-buildkit-toolcache:
     name: BC BuildKit Backend + sccache
@@ -289,5 +289,5 @@ jobs:
           cli_platform: linux-amd64
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
           benchmark_workspace: ${{ github.repository }}
-          cache_export_type: boringcache
+          buildkit_cache_backend: boringcache
           docker_tool_cache: sccache

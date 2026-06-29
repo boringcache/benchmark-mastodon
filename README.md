@@ -27,12 +27,17 @@ Fresh lane runs a no-prior-cache cold build plus one warm rerun on the same pinn
 
 The benchmark has two Docker surfaces:
 
-- `mastodon-docker`: main Mastodon image from `scenarios/mastodon-sccache/Dockerfile`, generated from `upstream/Dockerfile` plus the static optional `sccache` secret contract used by Docker tool-cache lanes.
+- `mastodon-docker`: main Mastodon image from `upstream/Dockerfile` for
+  plain Docker cache lanes.
+- `mastodon-docker + sccache`: main Mastodon image from
+  `scenarios/mastodon-sccache/Dockerfile`, generated from
+  `upstream/Dockerfile` plus the static optional `sccache` secret contract used
+  by Docker tool-cache lanes.
 - `mastodon-streaming`: streaming service image from `upstream/streaming/Dockerfile`.
 
 Rolling dispatch runs the combined main Docker benchmark and the streaming Docker pair on every upstream sync commit. The retired dependency-directory package-CAS benchmark set has been removed.
 
-BoringCache compares the explicit registry/OCI cache path, the explicit native BuildKit path, and the experimental BuildKit backend path. The main Docker benchmark also runs `+ sccache` BoringCache lanes because Mastodon's main image compiles libvips and FFmpeg from source. The `sccache` hook is static in the measured Dockerfile and optional at runtime, so tool-cache lanes do not mutate Docker build args or the Dockerfile graph. Upstream Dockerfile cache mounts stay native to BuildKit.
+BoringCache compares the explicit registry/OCI cache path, the explicit native BuildKit path, and the experimental BuildKit backend path. The main Docker benchmark also runs `+ sccache` BoringCache lanes because Mastodon's main image compiles libvips and FFmpeg from source. Only the `+ sccache` lanes use the fixture Dockerfile; plain lanes build the pinned upstream Dockerfile directly. The `sccache` hook is static in the measured Dockerfile and optional at runtime, so tool-cache lanes do not mutate Docker build args or the Dockerfile graph. Upstream Dockerfile cache mounts stay native to BuildKit.
 
 The main Docker workflow is [`.github/workflows/mastodon-docker-benchmark.yml`](.github/workflows/mastodon-docker-benchmark.yml), which runs GitHub Actions Cache, ECR, BoringCache OCI, BoringCache Native, BoringCache OCI + sccache, BoringCache Native + sccache, and the experimental BoringCache BuildKit backend side by side. The streaming workflow intentionally has no Docker tool-cache lanes; its Dockerfile is Node/Yarn work rather than a stable C/C++ compiler-cache target.
 
