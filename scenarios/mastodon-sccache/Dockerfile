@@ -336,6 +336,7 @@ RUN \
   --mount=type=cache,id=apt-cache-${TARGETPLATFORM},target=/var/cache/apt,sharing=locked \
   --mount=type=cache,id=apt-lib-${TARGETPLATFORM},target=/var/lib/apt,sharing=locked \
   # Install build tools and bundler dependencies from APT
+  apt-get update; \
   apt-get install -y --no-install-recommends \
   build-essential \
   git \
