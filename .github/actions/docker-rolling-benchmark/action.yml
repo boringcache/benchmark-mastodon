@@ -699,6 +699,7 @@ runs:
           --docker-cache-export-seconds "${{ steps.build.outputs.docker_cache_export_seconds }}" \
           --buildkit-cached-steps "${{ steps.build.outputs.buildkit_cached_steps }}" \
           --buildkit-image "${{ inputs.buildkit_image }}" \
+          --buildkit-cache-backend "${{ inputs.buildkit_cache_backend }}" \
           --buildkit-cache-export-type "${{ inputs.cache_export_type }}" \
           --cache-storage-bytes "${{ steps.storage.outputs.bytes }}" \
           --cache-storage-source "${{ steps.storage.outputs.source }}" \
