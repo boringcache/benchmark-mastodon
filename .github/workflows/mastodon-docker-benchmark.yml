@@ -255,7 +255,7 @@ jobs:
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
           benchmark_workspace: ${{ github.repository }}
           buildkit_cache_backend: boringcache
-          oci_hydration: bodies-before-ready
+          oci_hydration: metadata-only
 
   boringcache-prewarm-buildkit-toolcache:
     name: BC BuildKit Backend + sccache
@@ -291,5 +291,5 @@ jobs:
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
           benchmark_workspace: ${{ github.repository }}
           buildkit_cache_backend: boringcache
-          oci_hydration: bodies-before-ready
+          oci_hydration: metadata-only
           docker_tool_cache: sccache
