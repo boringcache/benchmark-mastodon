@@ -19,6 +19,11 @@ on:
         required: false
         type: string
         default: ""
+      oci_hydration:
+        description: "Optional Docker/BuildKit proxy hydration policy: metadata-only, bodies-background, or bodies-before-ready."
+        required: false
+        type: string
+        default: metadata-only
       buildkit_image:
         required: false
         type: string
@@ -71,6 +76,7 @@ env:
   BUILDKIT_BACKEND: ${{ inputs.buildkit_backend }}
   BORINGCACHE_BUILDKIT_CACHE_BACKEND: ${{ inputs.buildkit_cache_backend }}
   BORINGCACHE_CACHE_EXPORT_TYPE: ${{ inputs.cache_export_type }}
+  BORINGCACHE_OCI_HYDRATION: ${{ inputs.oci_hydration }}
   BORINGCACHE_MANAGED_BUILDKIT_IMAGE: ${{ inputs.buildkit_image }}
   BUILDKIT_IMAGE: ${{ inputs.buildkit_image }}
 
@@ -194,6 +200,7 @@ jobs:
           workspace: ${{ env.BENCHMARK_WORKSPACE }}
           cache-tag: ${{ steps.scope.outputs.cache_scope }}
           registry-tag: ${{ steps.scope.outputs.registry_proxy_tags }}
+          oci-hydration: ${{ inputs.oci_hydration }}
           proxy-no-git: 'true'
           driver-opts: |
             image=${{ inputs.buildkit_image }}
