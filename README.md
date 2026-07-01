@@ -35,7 +35,7 @@ The benchmark has two Docker surfaces:
 
 Rolling dispatch runs the combined main Docker benchmark and the streaming Docker pair on every upstream sync commit. The retired dependency-directory package-CAS benchmark set has been removed.
 
-BoringCache compares the explicit registry/OCI cache path and the managed BuildKit backend path. The main Docker benchmark also runs `+ sccache` BoringCache lanes because Mastodon's main image compiles libvips and FFmpeg from source. The `sccache` hook is static in the measured Dockerfile and optional at runtime, so tool-cache lanes do not mutate Docker build args or the Dockerfile graph. Upstream Dockerfile cache mounts stay native to BuildKit.
+BoringCache compares the explicit registry/OCI cache path and the managed BuildKit backend path. The main Docker benchmark also runs `+ sccache` BoringCache lanes because Mastodon's main image compiles libvips and FFmpeg from source. The `sccache` hook is static in the measured Dockerfile and optional at runtime, so tool-cache lanes do not mutate Docker build args or the Dockerfile graph. Upstream Dockerfile cache mounts remain owned by BuildKit.
 
 The main Docker workflow is [`.github/workflows/mastodon-docker-benchmark.yml`](.github/workflows/mastodon-docker-benchmark.yml), which runs GitHub Actions Cache, ECR, BoringCache OCI, BoringCache OCI + sccache, and the managed BoringCache BuildKit backend side by side. The streaming workflow intentionally has no Docker tool-cache lanes; its Dockerfile is Node/Yarn work rather than a stable C/C++ compiler-cache target.
 

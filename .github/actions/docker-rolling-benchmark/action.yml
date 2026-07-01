@@ -266,6 +266,7 @@ runs:
         workspace: ${{ inputs.benchmark_workspace }}
         cache-tag: ${{ steps.scope.outputs.cache_scope }}
         registry-tag: ${{ steps.scope.outputs.registry_proxy_tags }}
+        cache-backend: ${{ inputs.buildkit_cache_backend == 'boringcache' && 'boringcache' || 'registry' }}
         oci-hydration: ${{ inputs.oci_hydration }}
         no-platform: "true"
         proxy-no-git: "true"
@@ -276,7 +277,7 @@ runs:
         verbose: true
 
     - name: Set up Docker Buildx for BoringCache wrapped build
-      if: ${{ inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry' && inputs.docker_tool_cache != '' }}
+      if: ${{ inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry' && inputs.buildkit_cache_backend != 'boringcache' && inputs.docker_tool_cache != '' }}
       id: tool_cache_buildx
       uses: docker/setup-buildx-action@v4
       with:
@@ -399,7 +400,7 @@ runs:
         BORINGCACHE_CACHE_UNREADABLE_FROM_REFS: ${{ steps.docker_cache.outputs.docker-cache-unreadable-from-refs }}
         BORINGCACHE_DOCKER_PROMOTION_REFS: ${{ steps.docker_cache.outputs.docker-cache-promotion-refs }}
         BORINGCACHE_DOCKER_TOOL_CACHE: ${{ inputs.docker_tool_cache }}
-        BUILDER: ${{ inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry' && inputs.docker_tool_cache == '' && steps.docker_cache.outputs.buildx-name || inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry' && inputs.docker_tool_cache != '' && steps.tool_cache_buildx.outputs.name || steps.buildx.outputs.name || '' }}
+        BUILDER: ${{ inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry' && inputs.docker_tool_cache == '' && steps.docker_cache.outputs.buildx-name || inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry' && inputs.buildkit_cache_backend != 'boringcache' && inputs.docker_tool_cache != '' && steps.tool_cache_buildx.outputs.name || steps.buildx.outputs.name || '' }}
         CACHE_FROM: ${{ steps.docker_cache.outputs.cache-from }}
         CACHE_TO: ${{ steps.docker_cache.outputs.cache-to }}
         CACHE_SCOPE: ${{ steps.scope.outputs.cache_scope }}

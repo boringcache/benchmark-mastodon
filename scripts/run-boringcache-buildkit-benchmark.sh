@@ -59,7 +59,9 @@ resolve_docker_tool_cache_value() {
 }
 
 use_wrapped_boringcache_build() {
-  [[ "$backend" == "native" || -n "$docker_tool_cache" ]]
+  [[ -n "$docker_tool_cache" ]] && return 0
+  [[ -z "${CACHE_FROM:-}" && -z "${CACHE_TO:-}" ]] && return 0
+  return 1
 }
 
 verify_mastodon_sccache_tool_cache_contract() {
@@ -502,12 +504,16 @@ run_wrapped_boringcache_build() {
   elif [[ "${CACHE_LANE:-fresh}" == "rolling" ]]; then
     phase_hint="commit"
   fi
+  local cli_backend="$backend"
+  if [[ "$buildkit_cache_backend" == "boringcache" ]]; then
+    cli_backend="boringcache"
+  fi
 
   local boringcache_args=(
     boringcache docker
     --workspace "${BENCHMARK_WORKSPACE:?Set BENCHMARK_WORKSPACE}"
     --tag "${CACHE_SCOPE:?Set CACHE_SCOPE}"
-    --backend "$backend"
+    --backend "$cli_backend"
     --port "$proxy_port"
     --cache-mode max
     --no-platform
@@ -516,7 +522,7 @@ run_wrapped_boringcache_build() {
     --metadata-hint "benchmark=${BENCHMARK_ID:-docker}"
     --metadata-hint "phase=${phase_hint}"
     --metadata-hint "lane=${CACHE_LANE:-fresh}"
-    --metadata-hint "backend=${backend}"
+    --metadata-hint "backend=${cli_backend}"
     --fail-on-cache-error
   )
 
@@ -540,7 +546,7 @@ run_wrapped_boringcache_build() {
   local boringcache_cmd=("$boringcache_bin")
 
   local builder_args=()
-  if [[ -n "${BUILDER:-}" ]]; then
+  if [[ -n "${BUILDER:-}" && "$cli_backend" != "boringcache" ]]; then
     builder_args=(--builder "$BUILDER")
   fi
 
