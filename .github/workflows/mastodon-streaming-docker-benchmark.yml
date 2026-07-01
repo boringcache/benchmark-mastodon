@@ -116,38 +116,6 @@ jobs:
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
 
-  # No Docker +toolcache lanes here yet: the streaming image only runs yarn
-  # install/focus work in Docker, not a stable supported turbo/nx/sccache
-  # contract that the BoringCache Docker tool-cache adapter can source.
-  boringcache-native:
-    name: BC Native
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
-      BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
-      BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_API_TOKEN || secrets.BORINGCACHE_RESTORE_TOKEN }}
-    steps:
-      - name: Checkout benchmark repo
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-          submodules: false
-
-      - name: BC Native
-        uses: ./.github/actions/docker-rolling-benchmark
-        with:
-          strategy: boringcache
-          buildkit_backend: native
-          benchmark_id: mastodon-streaming-native
-          project_repo: mastodon/mastodon
-          dockerfile_path: upstream/streaming/Dockerfile
-          docker_context: upstream
-          image_tag: mastodon-streaming-benchmark:latest
-          cli_platform: linux-amd64
-          benchmark_workspace: ${{ github.repository }}
-
   boringcache-buildkit-backend:
     name: BC BuildKit Backend
     if: ${{ github.event_name != 'pull_request' && (inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE) }}

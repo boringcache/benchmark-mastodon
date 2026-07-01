@@ -10,6 +10,14 @@ max_attempts=1
 cache_export_pattern='expected sha256:.*got sha256:e3b0|error writing layer blob|400 Bad Request|broken pipe'
 mode="${1:-full}"
 backend="${BUILDKIT_BACKEND:-registry}"
+case "$backend" in
+  registry)
+    ;;
+  *)
+    echo "Unsupported BUILDKIT_BACKEND: ${backend}" >&2
+    exit 1
+    ;;
+esac
 docker_tool_cache="${BORINGCACHE_DOCKER_TOOL_CACHE:-}"
 buildkit_cache_backend="${BORINGCACHE_BUILDKIT_CACHE_BACKEND:-${BORINGCACHE_CACHE_EXPORT_TYPE:-}}"
 cache_export_type="$buildkit_cache_backend"
@@ -22,10 +30,9 @@ cache_promotion_refs="${BORINGCACHE_DOCKER_PROMOTION_REFS:-}"
 allow_rolling_bootstrap="${ALLOW_BORINGCACHE_ROLLING_BOOTSTRAP:-false}"
 build_output="${BENCHMARK_BUILD_OUTPUT:-none}"
 oci_hydration="${BORINGCACHE_OCI_HYDRATION:-metadata-only}"
-native_tool_evidence_dir="$(mktemp -d /tmp/boringcache-native-tool.XXXXXX)"
-chmod 0777 "$native_tool_evidence_dir" 2>/dev/null || true
-native_tool_evidence_path="${native_tool_evidence_dir}/native-tool.json"
-sccache_stats_path="${native_tool_evidence_dir}/sccache-stats.txt"
+sccache_stats_dir="$(mktemp -d /tmp/boringcache-sccache-stats.XXXXXX)"
+chmod 0777 "$sccache_stats_dir" 2>/dev/null || true
+sccache_stats_path="${sccache_stats_dir}/sccache-stats.txt"
 export BORINGCACHE_OBSERVABILITY_INCLUDE_CACHE_OPS="${BORINGCACHE_OBSERVABILITY_INCLUDE_CACHE_OPS:-1}"
 start_proxy() { :; }
 stop_proxy() { :; }
@@ -205,14 +212,6 @@ write_build_metrics() {
   if [[ -s "$sccache_stats_path" ]]; then
     echo "sccache_stats_file=$sccache_stats_path" >> "$output_path"
   fi
-  if [[ "$backend" == "native" ]]; then
-    echo "buildkit_backend=native" >> "$output_path"
-    if [[ -s "$native_tool_evidence_path" ]]; then
-      echo "native_tool_evidence=$native_tool_evidence_path" >> "$output_path"
-      append_native_tool_metrics "$native_tool_evidence_path" || true
-    fi
-  fi
-
   if [[ -s "$status_snapshot_path" ]] && command -v jq >/dev/null 2>&1; then
     append_status_metric() {
       local key="$1"
@@ -288,41 +287,6 @@ write_build_metrics() {
     fi
   fi
 }
-
-append_native_tool_metrics() {
-  local evidence_file="$1"
-  [[ -s "$evidence_file" ]] || return 1
-  command -v jq >/dev/null 2>&1 || return 1
-
-  local requested uploaded already_present uploaded_bytes export_seconds save_seconds
-  requested="$(jq -r '.publisher.final_save_checked_blob_count // .publisher.final_save_graph_blob_count // empty' "$evidence_file" 2>/dev/null || true)"
-  uploaded="$(jq -r '.publisher.final_save_uploaded_blob_count // empty' "$evidence_file" 2>/dev/null || true)"
-  already_present="$(jq -r '.publisher.final_save_already_present_blob_count // empty' "$evidence_file" 2>/dev/null || true)"
-  uploaded_bytes="$(jq -r '.publisher.final_save_uploaded_blob_bytes // .publisher.final_save_missing_blob_bytes // empty' "$evidence_file" 2>/dev/null || true)"
-  export_seconds="$(jq -r '.publisher.final_export_seconds // empty' "$evidence_file" 2>/dev/null || true)"
-  save_seconds="$(jq -r '.publisher.final_save_seconds // empty' "$evidence_file" 2>/dev/null || true)"
-  if [[ -z "$already_present" && "$requested" =~ ^[0-9]+$ && "$uploaded" =~ ^[0-9]+$ ]]; then
-    already_present="$(( requested > uploaded ? requested - uploaded : 0 ))"
-  fi
-
-  append_metric() {
-    local key="$1"
-    local value="$2"
-    if [[ -n "$value" && "$value" != "null" ]]; then
-      echo "$key=$value" >> "$output_path"
-    fi
-  }
-
-  append_metric oci_upload_requested_blobs "$requested"
-  append_metric oci_new_blob_count "$uploaded"
-  append_metric oci_upload_already_present "$already_present"
-  append_metric oci_new_blob_bytes "$uploaded_bytes"
-  append_metric oci_upload_batch_seconds "$save_seconds"
-  if [[ "$export_seconds" =~ ^[0-9]+([.][0-9]+)?$ && "$save_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-    awk -v export_s="$export_seconds" -v save_s="$save_seconds" 'BEGIN { printf "docker_cache_export_seconds=%.3f\n", export_s + save_s }' >> "$output_path"
-  fi
-}
-
 
 capture_proxy_status() {
   local output_path="${1:-$status_snapshot_path}"
@@ -515,12 +479,6 @@ write_build_diagnostics() {
     grep -E '^#[0-9]+ DONE [0-9]+(\.[0-9]+)?s$' "$build_log" | tail -n 80 || true
     echo "EOF"
     echo "observability_jsonl=${observability_path}"
-    echo "native_tool_evidence=${native_tool_evidence_path}"
-    if [[ -s "$native_tool_evidence_path" ]]; then
-      echo "native_tool_summary<<EOF"
-      jq -c '{restore, publisher, command, publish}' "$native_tool_evidence_path" 2>/dev/null || cat "$native_tool_evidence_path"
-      echo "EOF"
-    fi
     if [[ -s "$sccache_stats_path" ]]; then
       echo "sccache_stats<<EOF"
       cat "$sccache_stats_path"
@@ -562,9 +520,6 @@ run_wrapped_boringcache_build() {
     --fail-on-cache-error
   )
 
-  if [[ "$backend" == "native" ]]; then
-    boringcache_args+=(--native-tool-evidence-json "$native_tool_evidence_path")
-  fi
 
   if [[ -n "$docker_tool_cache" ]]; then
     local tool_cache_value
