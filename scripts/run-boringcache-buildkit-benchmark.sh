@@ -59,7 +59,11 @@ resolve_docker_tool_cache_value() {
 }
 
 use_wrapped_boringcache_build() {
-  [[ "$buildkit_cache_backend" == "boringcache" ]] && return 0
+  if [[ "$buildkit_cache_backend" == "boringcache" ]]; then
+    [[ -n "$docker_tool_cache" ]] && return 0
+    [[ -z "${CACHE_TO:-}" ]] && return 0
+    return 1
+  fi
   [[ -n "$docker_tool_cache" ]] && return 0
   [[ -z "${CACHE_FROM:-}" && -z "${CACHE_TO:-}" ]] && return 0
   return 1

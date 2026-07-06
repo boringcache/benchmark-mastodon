@@ -10,11 +10,24 @@ on:
         required: false
         type: string
         default: ""
+      cli_version:
+        description: "Optional BoringCache CLI release tag for canary runs, for example vcli-canary."
+        required: false
+        type: string
+        default: ""
       benchmark_id_suffix:
         description: "Optional suffix appended to built-in benchmark/cache scopes for isolated comparison runs."
         required: false
         type: string
         default: ""
+      lane_filter:
+        description: "Optional manual-dispatch lane filter."
+        required: false
+        type: choice
+        default: all
+        options:
+          - all
+          - buildkit
       upstream_ref:
         description: "Optional Mastodon ref/SHA to benchmark instead of the pinned upstream submodule commit."
         required: false
@@ -45,6 +58,7 @@ permissions:
 jobs:
   github-actions-cache:
     name: GHA
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -70,7 +84,7 @@ jobs:
 
   ecr-cache:
     name: ECR
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
@@ -101,6 +115,7 @@ jobs:
 
   boringcache-oci:
     name: BC OCI
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -126,11 +141,13 @@ jobs:
           dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
+          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
 
   boringcache-oci-toolcache:
     name: BC OCI + sccache
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -156,13 +173,14 @@ jobs:
           dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
+          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
           docker_tool_cache: sccache
 
   boringcache-prewarm-buildkit:
     name: BC BuildKit Backend
-    if: ${{ github.event_name != 'pull_request' && (inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE) }}
+    if: ${{ github.event_name != 'pull_request' && (inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE) && (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'buildkit') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -190,6 +208,7 @@ jobs:
           dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
+          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
           cli_platform: linux-amd64
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
           benchmark_workspace: ${{ github.repository }}
@@ -198,7 +217,7 @@ jobs:
 
   boringcache-prewarm-buildkit-toolcache:
     name: BC BuildKit Backend + sccache
-    if: ${{ github.event_name != 'pull_request' && (inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE) }}
+    if: ${{ github.event_name != 'pull_request' && (inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE) && (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'buildkit') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -226,6 +245,7 @@ jobs:
           dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
+          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
           cli_platform: linux-amd64
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
           benchmark_workspace: ${{ github.repository }}
