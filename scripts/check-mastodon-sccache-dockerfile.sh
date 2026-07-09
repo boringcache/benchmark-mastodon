@@ -26,6 +26,7 @@ awk '
     ffmpeg_compile = 0
     in_ruby_build = 0
     ruby_build_apt_update = 0
+    ruby_sccache_copy = 0
   }
 
   skipping_ffmpeg_run {
@@ -90,6 +91,10 @@ awk '
   /^FROM ruby AS ruby-build$/ {
     in_ruby_build = 1
     print
+    print ""
+    print "# Keep Ruby native extension builds compatible with Ruby images whose compiler config invokes sccache."
+    print "COPY --from=media-build /usr/local/bin/sccache /usr/local/bin/sccache"
+    ruby_sccache_copy += 1
     next
   }
 
@@ -193,14 +198,16 @@ awk '
         media_sccache_deps != 1 ||
         media_sccache_install != 1 ||
         ruby_build_apt_update != 1 ||
+        ruby_sccache_copy != 1 ||
         libvips_setup != 1 ||
         libvips_compile != 1 ||
         ffmpeg_compile != 1) {
-      printf "unexpected Mastodon sccache Dockerfile hook count: arg=%d deps=%d install=%d ruby_build_apt_update=%d libvips_setup=%d libvips_compile=%d ffmpeg_compile=%d\n",
+      printf "unexpected Mastodon sccache Dockerfile hook count: arg=%d deps=%d install=%d ruby_build_apt_update=%d ruby_sccache_copy=%d libvips_setup=%d libvips_compile=%d ffmpeg_compile=%d\n",
         media_sccache_arg,
         media_sccache_deps,
         media_sccache_install,
         ruby_build_apt_update,
+        ruby_sccache_copy,
         libvips_setup,
         libvips_compile,
         ffmpeg_compile > "/dev/stderr"

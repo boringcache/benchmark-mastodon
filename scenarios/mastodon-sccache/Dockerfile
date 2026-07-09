@@ -328,6 +328,9 @@ RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
 # Create temporary build layer from base image for Ruby dependencies
 FROM ruby AS ruby-build
 
+# Keep Ruby native extension builds compatible with Ruby images whose compiler config invokes sccache.
+COPY --from=media-build /usr/local/bin/sccache /usr/local/bin/sccache
+
 ARG TARGETPLATFORM
 
 # hadolint ignore=DL3008
