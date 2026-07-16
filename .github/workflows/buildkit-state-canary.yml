@@ -57,7 +57,7 @@ jobs:
         run: ./scripts/prepare-source.sh base
 
       - name: Build with persistent BuildKit state
-        uses: boringcache/one@one-canary-2640d8698695
+        uses: boringcache/one@one-canary-a9c73302d8be
         env:
           BORINGCACHE_BUILDKIT_MOUNTCACHE_OFFLOADER: "1"
           BORINGCACHE_REQUIRE_SERVER_SIGNATURE: "1"
