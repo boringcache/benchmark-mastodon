@@ -86,6 +86,4 @@ jobs:
           verify: wait
           verify-require-server-signature: "true"
           diagnostics: summary
-          diagnostics-artifact-name: ${{ format('{0}-state-4c-r{1}-a{2}', matrix.case_id, github.run_id, github.run_attempt) }}
-          diagnostics-artifact-retention-days: "14"
           metadata-hints: ${{ format('benchmark={0},phase=commit', matrix.case_id) }}
