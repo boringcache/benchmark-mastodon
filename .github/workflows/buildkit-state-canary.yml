@@ -24,11 +24,11 @@ jobs:
         include:
           - case_id: mastodon
             label: Mastodon server
-            dockerfile: scenarios/mastodon-sccache/Dockerfile
+            dockerfile: ../scenarios/mastodon-sccache/Dockerfile
             image: mastodon-state-benchmark
           - case_id: mastodon-streaming
             label: Mastodon streaming
-            dockerfile: upstream/streaming/Dockerfile
+            dockerfile: streaming/Dockerfile
             image: mastodon-streaming-state-benchmark
     env:
       BORINGCACHE_API_URL: https://api.boringcache.com
