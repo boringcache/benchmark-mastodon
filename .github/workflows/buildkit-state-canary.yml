@@ -1,0 +1,91 @@
+name: BuildKit State Canary
+run-name: BuildKit state 4c | Mastodon Docker matrix | ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  packages: read
+
+concurrency:
+  group: buildkit-state-canary-mastodon-4c
+  cancel-in-progress: false
+
+jobs:
+  state:
+    name: State 4c / ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case_id: mastodon
+            label: Mastodon server
+            dockerfile: scenarios/mastodon-sccache/Dockerfile
+            image: mastodon-state-benchmark
+          - case_id: mastodon-streaming
+            label: Mastodon streaming
+            dockerfile: upstream/streaming/Dockerfile
+            image: mastodon-streaming-state-benchmark
+    env:
+      BORINGCACHE_API_URL: https://api.boringcache.com
+      BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+      BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_API_TOKEN || secrets.BORINGCACHE_RESTORE_TOKEN }}
+      BORINGCACHE_GHCR_READ_USER: ${{ vars.BORINGCACHE_GHCR_READ_USER || github.actor }}
+      BORINGCACHE_GHCR_READ_TOKEN: ${{ secrets.BORINGCACHE_GHCR_READ_TOKEN }}
+      BORINGCACHE_BUILD_MAX_ATTEMPTS: "1"
+    steps:
+      - name: Checkout benchmark repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Checkout pinned Mastodon source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule sync --recursive
+          git -c protocol.version=2 submodule update --init --depth 1 --recommend-shallow --jobs 4 upstream
+
+      - name: Prepare native benchmark source
+        shell: bash
+        run: ./scripts/prepare-source.sh base
+
+      - name: Build with persistent BuildKit state
+        uses: boringcache/one@one-canary-4a8b54452cfb
+        env:
+          BORINGCACHE_BUILDKIT_MOUNTCACHE_OFFLOADER: "1"
+          BORINGCACHE_REQUIRE_SERVER_SIGNATURE: "1"
+        with:
+          setup: none
+          mode: docker
+          workspace: ${{ github.repository }}
+          cli-version: vcli-canary-661f42afa76e
+          cli-platform: linux-amd64
+          cache-runtime: "false"
+          cache-backend: state
+          managed-buildkit-image: ghcr.io/boringcache/buildkit@sha256:f9f20bdc8b03f7f5c2946f51fe995ef1f08122af1034e4b4c2a8b1354273859f
+          cache-tag: ${{ format('{0}-buildkit-state-rolling-main-4c', matrix.case_id) }}
+          working-directory: .
+          context: upstream
+          dockerfile: ${{ matrix.dockerfile }}
+          image: ${{ matrix.image }}
+          tags: latest
+          platforms: linux/amd64
+          load: "false"
+          push: "false"
+          proxy-no-git: "true"
+          proxy-no-platform: "true"
+          no-platform: "true"
+          save-policy: auto
+          verify: wait
+          verify-require-server-signature: "true"
+          diagnostics: summary
+          diagnostics-artifact-name: ${{ format('{0}-state-4c-r{1}-a{2}', matrix.case_id, github.run_id, github.run_attempt) }}
+          diagnostics-artifact-retention-days: "14"
+          metadata-hints: ${{ format('benchmark={0},phase=commit', matrix.case_id) }}
