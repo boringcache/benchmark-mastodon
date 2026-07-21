@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       prewarm_buildkit_image:
-        description: "Optional experimental BuildKit image. When set, the rolling run adds a BC BuildKit backend lane."
+        description: "Optional managed BuildKit image override. Defaults to the stable managed channel."
         required: false
         type: string
         default: ""
@@ -147,7 +147,7 @@ jobs:
 
   boringcache-buildkit-backend:
     name: BC BuildKit Backend
-    if: ${{ github.event_name != 'pull_request' && (inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE) && (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'buildkit') }}
+    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'buildkit') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -177,7 +177,7 @@ jobs:
           image_tag: mastodon-streaming-benchmark:latest
           cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
           cli_platform: linux-amd64
-          buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE }}
+          buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE || 'ghcr.io/boringcache/buildkit:v0.30.0-bc' }}
           benchmark_workspace: ${{ github.repository }}
           buildkit_cache_backend: boringcache
           oci_hydration: metadata-only
