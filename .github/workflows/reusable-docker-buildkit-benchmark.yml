@@ -195,7 +195,7 @@ jobs:
 
 
       - name: Configure boringcache/one for Docker
-        if: inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry'
+        if: inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry' && inputs.buildkit_cache_backend != 'boringcache'
         id: docker_cache
         uses: boringcache/one@v1
         with:
@@ -207,7 +207,7 @@ jobs:
           cli-version: ${{ inputs.cli_version }}
           cache-tag: ${{ steps.scope.outputs.cache_scope }}
           registry-tag: ${{ steps.scope.outputs.registry_proxy_tags }}
-          cache-backend: ${{ inputs.buildkit_cache_backend == 'boringcache' && 'boringcache' || 'registry' }}
+          cache-backend: registry
           oci-hydration: ${{ inputs.oci_hydration }}
           proxy-no-git: 'true'
           driver-opts: |
@@ -463,7 +463,7 @@ jobs:
         run: echo "started_at=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Configure warm BoringCache Docker cache
-        if: inputs.cache_lane != 'rolling' && inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry'
+        if: inputs.cache_lane != 'rolling' && inputs.strategy == 'boringcache' && inputs.buildkit_backend == 'registry' && inputs.buildkit_cache_backend != 'boringcache'
         id: warm_docker_cache
         uses: boringcache/one@v1
         with:
@@ -475,7 +475,7 @@ jobs:
           cli-version: ${{ inputs.cli_version }}
           cache-tag: ${{ steps.scope.outputs.cache_scope }}
           registry-tag: ${{ steps.scope.outputs.registry_proxy_tags }}
-          cache-backend: ${{ inputs.buildkit_cache_backend == 'boringcache' && 'boringcache' || 'registry' }}
+          cache-backend: registry
           proxy-no-git: 'true'
           read-only: true
           driver-opts: |
