@@ -82,37 +82,6 @@ jobs:
           image_tag: mastodon-benchmark:latest
           benchmark_workspace: ${{ github.repository }}
 
-  ecr-cache:
-    name: ECR
-    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Checkout benchmark repo
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-          submodules: false
-
-      - name: ECR
-        uses: ./.github/actions/docker-rolling-benchmark
-        with:
-          strategy: ecr-cache
-          benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
-          project_repo: mastodon/mastodon
-          project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: scenarios/mastodon-sccache/Dockerfile
-          docker_context: upstream
-          image_tag: mastodon-benchmark:latest
-          benchmark_workspace: ${{ github.repository }}
-          ecr_region: ${{ vars.DOCKER_BENCHMARK_ECR_REGION || 'us-east-1' }}
-          ecr_role_arn: ${{ vars.DOCKER_BENCHMARK_ECR_ROLE_ARN }}
-          ecr_registry: ${{ vars.DOCKER_BENCHMARK_ECR_REGISTRY }}
-          ecr_repository: ${{ vars.DOCKER_BENCHMARK_ECR_REPOSITORY }}
-
   boringcache-oci:
     name: BC OCI
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit' }}
