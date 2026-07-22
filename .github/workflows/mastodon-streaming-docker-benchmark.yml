@@ -4,8 +4,13 @@ run-name: >-
 on:
   workflow_dispatch:
     inputs:
-      prewarm_buildkit_image:
-        description: "Optional BuildKit image. When set, the run adds a BC BuildKit backend lane."
+      buildkit_image:
+        description: "Optional managed BoringCache BuildKit image."
+        required: false
+        type: string
+        default: ""
+      cli_version:
+        description: "Optional BoringCache CLI release tag for canary runs, for example vcli-canary."
         required: false
         type: string
         default: ""
@@ -26,7 +31,7 @@ on:
         default: all
         options:
           - all
-          - buildkit
+          - boringcache
   push:
     branches:
       - main
@@ -57,7 +62,7 @@ permissions:
 jobs:
   github-actions-cache:
     name: GHA
-    if: ${{ (github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit') }}
+    if: ${{ (github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'boringcache') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -81,40 +86,9 @@ jobs:
           image_tag: mastodon-streaming-benchmark:latest
           benchmark_workspace: ${{ github.repository }}
 
-  boringcache-oci:
-    name: BC OCI
-    if: ${{ (github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
-      BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
-      BORINGCACHE_API_TOKEN: ${{ secrets.BORINGCACHE_API_TOKEN || secrets.BORINGCACHE_RESTORE_TOKEN }}
-    steps:
-      - name: Checkout benchmark repo
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-          submodules: false
-
-      - name: BC OCI
-        uses: ./.github/actions/docker-rolling-benchmark
-        with:
-          strategy: boringcache
-          buildkit_backend: registry
-          benchmark_id: ${{ format('mastodon-streaming{0}', inputs.benchmark_id_suffix) }}
-          project_repo: mastodon/mastodon
-          project_ref: ${{ inputs.upstream_ref }}
-          dockerfile_path: upstream/streaming/Dockerfile
-          docker_context: upstream
-          image_tag: mastodon-streaming-benchmark:latest
-          cli_platform: linux-amd64
-          benchmark_workspace: ${{ github.repository }}
-
-  boringcache-buildkit-backend:
-    name: BC BuildKit Backend
-    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'buildkit') }}
+  boringcache:
+    name: BoringCache
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'boringcache') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -131,19 +105,16 @@ jobs:
           fetch-depth: 1
           submodules: false
 
-      - name: BC BuildKit Backend
+      - name: BoringCache
         uses: ./.github/actions/docker-rolling-benchmark
         with:
           strategy: boringcache
-          buildkit_backend: registry
-          benchmark_id: ${{ format('mastodon-streaming-bc-buildkit{0}', inputs.benchmark_id_suffix) }}
+          benchmark_id: ${{ format('mastodon-streaming{0}', inputs.benchmark_id_suffix) }}
           project_repo: mastodon/mastodon
           project_ref: ${{ inputs.upstream_ref }}
           dockerfile_path: upstream/streaming/Dockerfile
           docker_context: upstream
           image_tag: mastodon-streaming-benchmark:latest
           cli_platform: linux-amd64
-          buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE || 'ghcr.io/boringcache/buildkit:v0.30.0-bc' }}
+          buildkit_image: ${{ inputs.buildkit_image || 'ghcr.io/boringcache/buildkit:v0.30.0-bc' }}
           benchmark_workspace: ${{ github.repository }}
-          buildkit_cache_backend: boringcache
-          oci_hydration: metadata-only
