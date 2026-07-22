@@ -35,9 +35,9 @@ The benchmark has two Docker surfaces:
 
 Rolling dispatch runs the combined main Docker benchmark and the streaming Docker pair on every upstream sync commit. The retired dependency-directory package-CAS benchmark set has been removed.
 
-BoringCache compares the explicit registry/OCI cache path and the managed BuildKit backend path. The main Docker benchmark also runs `+ sccache` BoringCache lanes because Mastodon's main image compiles libvips and FFmpeg from source. The `sccache` hook is static in the measured Dockerfile and optional at runtime, so tool-cache lanes do not mutate Docker build args or the Dockerfile graph. Upstream Dockerfile cache mounts remain owned by BuildKit.
+BoringCache uses its managed BuildKit backend as the single product lane and compares it with GitHub Actions Cache. The main Docker benchmark also runs a managed BuildKit + `sccache` composition because Mastodon's main image compiles libvips and FFmpeg from source. The `sccache` hook is static in the measured Dockerfile and optional at runtime, so tool-cache lanes do not mutate Docker build args or the Dockerfile graph. Upstream Dockerfile cache mounts remain owned by BuildKit.
 
-The main Docker workflow is [`.github/workflows/mastodon-docker-benchmark.yml`](.github/workflows/mastodon-docker-benchmark.yml), which runs GitHub Actions Cache, BoringCache OCI, BoringCache OCI + sccache, and the managed BoringCache BuildKit backend side by side. ECR is retired; historical ECR runs remain available as evidence. The streaming workflow intentionally has no Docker tool-cache lanes; its Dockerfile is Node/Yarn work rather than a stable C/C++ compiler-cache target.
+The main Docker workflow is [`.github/workflows/mastodon-docker-benchmark.yml`](.github/workflows/mastodon-docker-benchmark.yml), which runs GitHub Actions Cache, BoringCache managed BuildKit, and the explicit managed BuildKit + `sccache` composition side by side. The streaming workflow intentionally has no Docker tool-cache lane; its Dockerfile is Node/Yarn work rather than a stable C/C++ compiler-cache target.
 
 ## Output
 
