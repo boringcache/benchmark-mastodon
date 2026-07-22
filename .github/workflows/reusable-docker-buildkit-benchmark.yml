@@ -50,6 +50,10 @@ on:
       image_tag:
         required: true
         type: string
+      docker_tool_cache:
+        required: false
+        type: string
+        default: ""
       cli_platform:
         required: false
         type: string

@@ -1,12 +1,20 @@
 name: "Mastodon Streaming Docker Benchmark"
 run-name: >-
-  ${{ format('Benchmark Rolling | {0}', github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.event_name == 'schedule' && 'Scheduled' || format('Manual dispatch ({0})', github.ref_name)) }}
+  ${{ format('Benchmark {0} | {1}', github.event_name == 'pull_request' && 'Validation' || github.event_name == 'workflow_dispatch' && inputs.cli_version != '' && 'Canary' || (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling')) && 'Rolling' || 'Fresh', github.event_name == 'push' && 'Upstream update' || github.event_name == 'schedule' && 'Weekly' || github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || format('Manual dispatch ({0})', github.ref_name)) }}
 
 on:
   workflow_dispatch:
     inputs:
+      cache_lane:
+        description: "Benchmark lane"
+        required: false
+        type: choice
+        default: fresh
+        options:
+          - fresh
+          - rolling
       prewarm_buildkit_image:
-        description: "Optional managed BuildKit image override. Defaults to the stable managed channel."
+        description: "Optional BuildKit image. When set, the run adds a BC BuildKit backend lane."
         required: false
         type: string
         default: ""
@@ -33,6 +41,12 @@ on:
         options:
           - all
           - buildkit
+  push:
+    branches:
+      - main
+    paths:
+      - ".gitmodules"
+      - "upstream"
   schedule:
     - cron: "15 4 * * 2"
   pull_request:
@@ -58,7 +72,7 @@ permissions:
 jobs:
   github-actions-cache:
     name: GHA
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit' }}
+    if: ${{ (github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling')) && (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -84,7 +98,7 @@ jobs:
 
   boringcache-oci:
     name: BC OCI
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit' }}
+    if: ${{ (github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling')) && (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -116,7 +130,7 @@ jobs:
 
   boringcache-buildkit-backend:
     name: BC BuildKit Backend
-    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'buildkit') }}
+    if: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'rolling')) && (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'buildkit') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -150,3 +164,57 @@ jobs:
           benchmark_workspace: ${{ github.repository }}
           buildkit_cache_backend: boringcache
           oci_hydration: metadata-only
+
+  fresh-github-actions-cache:
+    name: GHA
+    if: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'fresh')) && (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit') }}
+    uses: ./.github/workflows/reusable-docker-buildkit-benchmark.yml
+    with:
+      strategy: actions-cache
+      cache_lane: fresh
+      benchmark_id: ${{ format('mastodon-streaming{0}', inputs.benchmark_id_suffix) }}
+      project_repo: mastodon/mastodon
+      dockerfile_path: upstream/streaming/Dockerfile
+      docker_context: upstream
+      image_tag: mastodon-streaming-benchmark:latest
+      benchmark_workspace: ${{ github.repository }}
+    secrets: inherit
+
+  fresh-boringcache-oci:
+    name: BC OCI
+    if: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'fresh')) && (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'buildkit') }}
+    uses: ./.github/workflows/reusable-docker-buildkit-benchmark.yml
+    with:
+      strategy: boringcache
+      cache_lane: fresh
+      buildkit_backend: registry
+      benchmark_id: ${{ format('mastodon-streaming{0}', inputs.benchmark_id_suffix) }}
+      project_repo: mastodon/mastodon
+      dockerfile_path: upstream/streaming/Dockerfile
+      docker_context: upstream
+      image_tag: mastodon-streaming-benchmark:latest
+      cli_platform: linux-amd64
+      cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
+      benchmark_workspace: ${{ github.repository }}
+    secrets: inherit
+
+  fresh-boringcache-buildkit-backend:
+    name: BC BuildKit Backend
+    if: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.cache_lane == 'fresh')) && (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'buildkit') }}
+    uses: ./.github/workflows/reusable-docker-buildkit-benchmark.yml
+    with:
+      strategy: boringcache
+      cache_lane: fresh
+      buildkit_backend: registry
+      buildkit_cache_backend: boringcache
+      oci_hydration: metadata-only
+      benchmark_id: ${{ format('mastodon-streaming-bc-buildkit{0}', inputs.benchmark_id_suffix) }}
+      project_repo: mastodon/mastodon
+      dockerfile_path: upstream/streaming/Dockerfile
+      docker_context: upstream
+      image_tag: mastodon-streaming-benchmark:latest
+      cli_platform: linux-amd64
+      cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
+      buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE || 'ghcr.io/boringcache/buildkit:v0.30.0-bc' }}
+      benchmark_workspace: ${{ github.repository }}
+    secrets: inherit
