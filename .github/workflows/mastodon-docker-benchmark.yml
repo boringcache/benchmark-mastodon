@@ -124,7 +124,7 @@ jobs:
           dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
-          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
+          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION || 'v1.13.93' }}
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
 
@@ -156,7 +156,7 @@ jobs:
           dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
-          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
+          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION || 'v1.13.93' }}
           cli_platform: linux-amd64
           benchmark_workspace: ${{ github.repository }}
           docker_tool_cache: sccache
@@ -191,7 +191,7 @@ jobs:
           dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
-          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
+          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION || 'v1.13.93' }}
           cli_platform: linux-amd64
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE || 'ghcr.io/boringcache/buildkit:v0.30.0-bc' }}
           benchmark_workspace: ${{ github.repository }}
@@ -228,7 +228,7 @@ jobs:
           dockerfile_path: scenarios/mastodon-sccache/Dockerfile
           docker_context: upstream
           image_tag: mastodon-benchmark:latest
-          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
+          cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION || 'v1.13.93' }}
           cli_platform: linux-amd64
           buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE || 'ghcr.io/boringcache/buildkit:v0.30.0-bc' }}
           benchmark_workspace: ${{ github.repository }}
@@ -265,7 +265,7 @@ jobs:
       docker_context: upstream
       image_tag: mastodon-benchmark:latest
       cli_platform: linux-amd64
-      cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
+      cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION || 'v1.13.93' }}
       benchmark_workspace: ${{ github.repository }}
     secrets: inherit
 
@@ -285,7 +285,7 @@ jobs:
       docker_context: upstream
       image_tag: mastodon-benchmark:latest
       cli_platform: linux-amd64
-      cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION }}
+      cli_version: ${{ inputs.cli_version || vars.MASTODON_BORINGCACHE_CLI_VERSION || vars.BORINGCACHE_BENCHMARK_CLI_VERSION || 'v1.13.93' }}
       buildkit_image: ${{ inputs.prewarm_buildkit_image || vars.MASTODON_PREWARM_BUILDKIT_IMAGE || 'ghcr.io/boringcache/buildkit:v0.30.0-bc' }}
       benchmark_workspace: ${{ github.repository }}
     secrets: inherit
