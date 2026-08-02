@@ -2,7 +2,7 @@
 
 Isolated Mastodon benchmark runner for BoringCache vs GitHub Actions cache.
 
-Stable BoringCache workflows install the verified CLI `v1.16.3` release;
+Stable BoringCache workflows install the verified CLI `v1.16.4` release;
 canary dispatches must use an exact immutable CLI tag.
 
 This repo exists separately from the central benchmarks publisher so Mastodon can have:
@@ -36,7 +36,7 @@ The benchmark has two Docker surfaces:
   by Docker tool-cache lanes.
 - `mastodon-streaming`: streaming service image from `upstream/streaming/Dockerfile`.
 
-Rolling dispatch runs the combined main Docker benchmark and the streaming Docker pair on every upstream sync commit. The retired dependency-directory package-CAS benchmark set has been removed.
+Every upstream sync commit runs the combined main Docker benchmark and the streaming Docker pair through their normal product workflows. The retired dependency-directory package-CAS benchmark set has been removed.
 
 BoringCache uses its managed BuildKit backend as the single product lane and compares it with GitHub Actions Cache. The main Docker benchmark also runs a managed BuildKit + `sccache` composition because Mastodon's main image compiles libvips and FFmpeg from source. The `sccache` hook is static in the measured Dockerfile and optional at runtime, so tool-cache lanes do not mutate Docker build args or the Dockerfile graph. Upstream Dockerfile cache mounts remain owned by BuildKit.
 
