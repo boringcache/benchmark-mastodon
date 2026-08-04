@@ -872,7 +872,7 @@ jobs:
           fi
           native_tool_args=()
           if [[ -s benchmark-sccache/sccache-stats.txt ]]; then
-            native_tool_args=(--sccache-stats-file benchmark-sccache/sccache-stats.txt)
+            native_tool_args=(--native-tool sccache --sccache-stats-file benchmark-sccache/sccache-stats.txt)
           fi
 
           .benchmark-config/scripts/write-benchmark-artifacts.sh \
