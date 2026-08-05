@@ -58,7 +58,7 @@ runs:
       run: |
         docker buildx build --file "$DOCKERFILE" --tag "${IMAGE}:latest" \
           --cache-from "type=gha,scope=${CACHE_SCOPE}" --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
-          --load upstream
+          upstream
     - name: Publish with BoringCache
       if: inputs.strategy == 'boringcache' && inputs.phase == 'publish'
       uses: boringcache/one@366e1aa37c271014d69aa6e1a12df57c472fdf5d # v1.16.9
@@ -71,7 +71,7 @@ runs:
         dockerfile: ${{ inputs.workload == 'server' && 'scenarios/mastodon-sccache/Dockerfile' || 'upstream/streaming/Dockerfile' }}
         image: ${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
         tags: latest
-        load: true
+        load: false
         docker-tool-cache: ${{ inputs.docker_tool_cache == 'true' && format('sccache:{0}-sccache', steps.scope.outputs.cache_scope) || '' }}
         fail-on-cache-error: true
         metadata-hints: benchmark=${{ inputs.benchmark_id }},phase=${{ inputs.cache_lane == 'rolling' && 'rolling' || 'fresh-cold' }}
@@ -88,14 +88,9 @@ runs:
         dockerfile: ${{ inputs.workload == 'server' && 'scenarios/mastodon-sccache/Dockerfile' || 'upstream/streaming/Dockerfile' }}
         image: ${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
         tags: latest
-        load: true
+        load: false
         docker-tool-cache: ${{ inputs.docker_tool_cache == 'true' && format('sccache:{0}-sccache', steps.scope.outputs.cache_scope) || '' }}
         fail-on-cache-miss: true
         fail-on-cache-error: true
         metadata-hints: benchmark=${{ inputs.benchmark_id }},phase=fresh-warm
         managed-buildkit-image: ${{ inputs.buildkit_image }}
-    - name: Verify the Mastodon image
-      shell: bash
-      env:
-        IMAGE: ${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
-      run: docker image inspect "${IMAGE}:latest" >/dev/null
