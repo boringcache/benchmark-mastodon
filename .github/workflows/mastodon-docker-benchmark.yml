@@ -1,97 +1,38 @@
 name: "Mastodon Docker Benchmark"
-run-name: >-
-  ${{ format('Benchmark {0} | {1}', github.event_name == 'pull_request' && 'Validation' || 'Rolling', github.event_name == 'push' && 'Upstream update' || github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || format('Manual dispatch ({0})', github.ref_name)) }}
-
+run-name: ${{ format('Benchmark {0} | {1}', inputs.cli_version != '' && 'Canary' || 'Rolling', github.event_name == 'push' && 'Upstream update' || format('Manual dispatch ({0})', github.ref_name)) }}
 on:
   workflow_dispatch:
     inputs:
-      buildkit_image:
-        description: "Optional managed BoringCache BuildKit image."
-        required: false
-        type: string
-        default: ""
-      cli_version:
-        description: "Optional exact BoringCache CLI release tag."
-        required: false
-        type: string
-        default: ""
-      benchmark_id_suffix:
-        description: "Optional suffix for isolated comparison runs."
-        required: false
-        type: string
-        default: ""
-      upstream_ref:
-        description: "Optional Mastodon ref or SHA instead of the pinned submodule commit."
-        required: false
-        type: string
-        default: ""
+      buildkit_image: {description: "Optional managed BoringCache BuildKit image.", required: false, type: string, default: ""}
+      cli_version: {description: "Optional exact BoringCache CLI release tag.", required: false, type: string, default: ""}
+      benchmark_id_suffix: {description: "Optional suffix for isolated comparison runs.", required: false, type: string, default: ""}
+      upstream_ref: {description: "Optional Mastodon ref or SHA instead of the pinned submodule commit.", required: false, type: string, default: ""}
+      runner_label: {description: "Optional runner label for a manual main-branch experiment.", required: false, type: string, default: ""}
   push:
-    branches:
-      - main
-    paths:
-      - ".gitmodules"
-      - "upstream"
-  pull_request:
-    paths:
-      - ".boringcache.toml"
-      - ".gitmodules"
-      - ".github/workflows/mastodon-docker-benchmark.yml"
-      - ".github/workflows/mastodon-fresh-benchmark.yml"
-      - ".github/workflows/reusable-mastodon-docker-benchmark.yml"
-      - "README.md"
-      - "scenarios/**"
-      - "scripts/**"
-      - "upstream"
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref_name }}
-  cancel-in-progress: false
-
-permissions:
-  contents: read
-  actions: write
-  packages: read
-
+    branches: [main]
+    paths: [".gitmodules", "upstream"]
+concurrency: {group: "${{ github.workflow }}-${{ github.ref_name }}", cancel-in-progress: false}
+permissions: {contents: read, actions: write, packages: read}
+env:
+  BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+  BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+  BORINGCACHE_NO_GIT: "true"
 jobs:
-  benchmark:
-    name: ${{ matrix.name }}
+  commit:
+    name: ${{ matrix.provider }} ${{ matrix.case }} commit
+    if: inputs.runner_label == '' || github.ref_name == 'main'
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.runner_label || 'ubuntu-latest' }}
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: GHA / Server
-            strategy: actions-cache
-            workload: server
-            benchmark_id: mastodon
-            docker_tool_cache: false
-          - name: BC / Server
-            strategy: boringcache
-            workload: server
-            benchmark_id: mastodon
-            docker_tool_cache: false
-          - name: BC + sccache / Server
-            strategy: boringcache
-            workload: server
-            benchmark_id: mastodon-sccache
-            docker_tool_cache: true
-          - name: GHA / Streaming
-            strategy: actions-cache
-            workload: streaming
-            benchmark_id: mastodon-streaming
-            docker_tool_cache: false
-          - name: BC / Streaming
-            strategy: boringcache
-            workload: streaming
-            benchmark_id: mastodon-streaming
-            docker_tool_cache: false
-    uses: ./.github/workflows/reusable-mastodon-docker-benchmark.yml
-    with:
-      strategy: ${{ matrix.strategy }}
-      workload: ${{ matrix.workload }}
-      cache_lane: ${{ github.event_name == 'pull_request' && 'fresh' || 'rolling' }}
-      benchmark_id: ${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}
-      cli_version: ${{ inputs.cli_version }}
-      buildkit_image: ${{ inputs.buildkit_image }}
-      docker_tool_cache: ${{ matrix.docker_tool_cache }}
-      upstream_ref: ${{ inputs.upstream_ref }}
-    secrets: inherit
+          - {provider: GitHub Actions, case: Mastodon server, strategy: actions-cache, workload: server, benchmark_id: mastodon, docker_tool_cache: false}
+          - {provider: BoringCache, case: Mastodon server, strategy: boringcache, workload: server, benchmark_id: mastodon, docker_tool_cache: false}
+          - {provider: BoringCache, case: Mastodon server sccache, strategy: boringcache, workload: server, benchmark_id: mastodon-sccache, docker_tool_cache: true}
+          - {provider: GitHub Actions, case: Mastodon streaming, strategy: actions-cache, workload: streaming, benchmark_id: mastodon-streaming, docker_tool_cache: false}
+          - {provider: BoringCache, case: Mastodon streaming, strategy: boringcache, workload: streaming, benchmark_id: mastodon-streaming, docker_tool_cache: false}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/mastodon-docker-benchmark
+        with: {strategy: "${{ matrix.strategy }}", workload: "${{ matrix.workload }}", cache_lane: rolling, phase: publish, benchmark_id: "${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}", cli_version: "${{ inputs.cli_version }}", buildkit_image: "${{ inputs.buildkit_image }}", docker_tool_cache: "${{ matrix.docker_tool_cache }}", upstream_ref: "${{ inputs.upstream_ref }}"}
