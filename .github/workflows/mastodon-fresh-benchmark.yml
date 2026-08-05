@@ -6,28 +6,25 @@ on:
   workflow_dispatch:
     inputs:
       buildkit_image:
-        description: "Optional managed BoringCache BuildKit image for canary runs."
+        description: "Optional managed BoringCache BuildKit image."
         required: false
         type: string
         default: ""
       cli_version:
-        description: "Optional BoringCache CLI release tag for canary runs, for example vcli-canary."
+        description: "Optional exact BoringCache CLI release tag."
         required: false
         type: string
         default: ""
       benchmark_id_suffix:
-        description: "Optional suffix appended to built-in benchmark/cache scopes for isolated comparison runs."
+        description: "Optional suffix for isolated comparison runs."
         required: false
         type: string
         default: ""
-      lane_filter:
-        description: "Optional manual-dispatch lane filter."
+      upstream_ref:
+        description: "Optional Mastodon ref or SHA instead of the pinned submodule commit."
         required: false
-        type: choice
-        default: all
-        options:
-          - all
-          - boringcache
+        type: string
+        default: ""
   schedule:
     - cron: "0 4 * * 2"
 
@@ -41,35 +38,45 @@ permissions:
   packages: read
 
 jobs:
-  github-actions-cache:
-    name: GHA
-    if: ${{ (github.event_name != 'workflow_dispatch' || inputs.lane_filter != 'boringcache') }}
-    uses: ./.github/workflows/reusable-docker-buildkit-benchmark.yml
+  benchmark:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GHA / Server
+            strategy: actions-cache
+            workload: server
+            benchmark_id: mastodon
+            docker_tool_cache: false
+          - name: BC / Server
+            strategy: boringcache
+            workload: server
+            benchmark_id: mastodon
+            docker_tool_cache: false
+          - name: BC + sccache / Server
+            strategy: boringcache
+            workload: server
+            benchmark_id: mastodon-sccache
+            docker_tool_cache: true
+          - name: GHA / Streaming
+            strategy: actions-cache
+            workload: streaming
+            benchmark_id: mastodon-streaming
+            docker_tool_cache: false
+          - name: BC / Streaming
+            strategy: boringcache
+            workload: streaming
+            benchmark_id: mastodon-streaming
+            docker_tool_cache: false
+    uses: ./.github/workflows/reusable-mastodon-docker-benchmark.yml
     with:
-      strategy: actions-cache
+      strategy: ${{ matrix.strategy }}
+      workload: ${{ matrix.workload }}
       cache_lane: fresh
-      benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
-      project_repo: mastodon/mastodon
-      dockerfile_path: scenarios/mastodon-sccache/Dockerfile
-      docker_context: upstream
-      image_tag: mastodon-benchmark:latest
-      benchmark_workspace: ${{ github.repository }}
-    secrets: inherit
-
-  boringcache:
-    name: BoringCache
-    if: ${{ (github.event_name != 'workflow_dispatch' || inputs.lane_filter == 'all' || inputs.lane_filter == 'boringcache') }}
-    uses: ./.github/workflows/reusable-docker-buildkit-benchmark.yml
-    with:
-      strategy: boringcache
-      cache_lane: fresh
-      benchmark_id: ${{ format('mastodon{0}', inputs.benchmark_id_suffix) }}
-      project_repo: mastodon/mastodon
-      dockerfile_path: scenarios/mastodon-sccache/Dockerfile
-      docker_context: upstream
-      image_tag: mastodon-benchmark:latest
-      cli_platform: linux-amd64
+      benchmark_id: ${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}
       cli_version: ${{ inputs.cli_version }}
       buildkit_image: ${{ inputs.buildkit_image }}
-      benchmark_workspace: ${{ github.repository }}
+      docker_tool_cache: ${{ matrix.docker_tool_cache }}
+      upstream_ref: ${{ inputs.upstream_ref }}
     secrets: inherit
