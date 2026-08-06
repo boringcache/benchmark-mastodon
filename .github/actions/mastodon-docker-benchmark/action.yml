@@ -52,6 +52,13 @@ runs:
         source_url="$(git config -f .gitmodules submodule.upstream.url)"
         echo "source_repository=$(printf '%s' "${source_url#https://github.com/}" | sed 's/\.git$//')" >> "$GITHUB_OUTPUT"
         echo "source_sha=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+    - name: Log in to the GitHub Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     - name: Start the provider setup timer
       id: setup_timer
       shell: bash
@@ -75,7 +82,8 @@ runs:
       with:
         context: upstream
         file: ${{ inputs.workload == 'server' && 'scenarios/mastodon-sccache/Dockerfile' || 'upstream/streaming/Dockerfile' }}
-        tags: ${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}:latest
+        tags: ghcr.io/${{ github.repository_owner }}/${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}:actions-cache
+        push: ${{ github.event_name != 'pull_request' }}
         provenance: false
         cache-from: type=gha,scope=${{ steps.scope.outputs.cache_scope }}
         cache-to: type=gha,scope=${{ steps.scope.outputs.cache_scope }},mode=max
@@ -90,8 +98,9 @@ runs:
         trust-policy: publish
         context: upstream
         dockerfile: ${{ inputs.workload == 'server' && 'scenarios/mastodon-sccache/Dockerfile' || 'upstream/streaming/Dockerfile' }}
-        image: ${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
-        tags: latest
+        image: ghcr.io/${{ github.repository_owner }}/${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
+        tags: boringcache
+        push: ${{ github.event_name != 'pull_request' }}
         load: false
         docker-tool-cache: ${{ inputs.docker_tool_cache == 'true' && format('sccache:{0}-sccache', steps.scope.outputs.cache_scope) || '' }}
         fail-on-cache-error: true
@@ -108,8 +117,9 @@ runs:
         trust-policy: restore
         context: upstream
         dockerfile: ${{ inputs.workload == 'server' && 'scenarios/mastodon-sccache/Dockerfile' || 'upstream/streaming/Dockerfile' }}
-        image: ${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
-        tags: latest
+        image: ghcr.io/${{ github.repository_owner }}/${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
+        tags: boringcache
+        push: ${{ github.event_name != 'pull_request' }}
         load: false
         docker-tool-cache: ${{ inputs.docker_tool_cache == 'true' && format('sccache:{0}-sccache', steps.scope.outputs.cache_scope) || '' }}
         fail-on-cache-miss: true
