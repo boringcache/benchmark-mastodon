@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/mastodon-docker-benchmark
-        with: {strategy: "${{ matrix.strategy }}", workload: "${{ matrix.workload }}", cache_lane: rolling, phase: publish, benchmark_id: "${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}", cli_version: "${{ inputs.cli_version }}", buildkit_image: "${{ inputs.buildkit_image }}", docker_tool_cache: "${{ matrix.docker_tool_cache }}", upstream_ref: "${{ inputs.upstream_ref }}"}
+        with: {strategy: "${{ matrix.strategy }}", workload: "${{ matrix.workload }}", cache_lane: rolling, phase: publish, benchmark_id: "${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}", cli_version: "${{ inputs.cli_version }}", buildkit_image: "${{ inputs.buildkit_image }}", docker_tool_cache: "${{ matrix.docker_tool_cache }}", upstream_ref: "${{ inputs.upstream_ref }}", push_image: "true"}
   report:
     name: Mastodon Docker rolling report
     needs: commit
