@@ -68,30 +68,30 @@ jobs:
       - name: Retain the mastodon BoringCache fresh result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-boringcache-fresh
-          path: benchmark-results/mastodon-boringcache-fresh.json
+          name: benchmark-mastodon${{ inputs.benchmark_id_suffix }}-boringcache-fresh
+          path: benchmark-results/mastodon${{ inputs.benchmark_id_suffix }}-boringcache-fresh.json
           if-no-files-found: error
       - name: Retain the mastodon GitHub Actions fresh result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-actions-cache-fresh
-          path: benchmark-results/mastodon-actions-cache-fresh.json
+          name: benchmark-mastodon${{ inputs.benchmark_id_suffix }}-actions-cache-fresh
+          path: benchmark-results/mastodon${{ inputs.benchmark_id_suffix }}-actions-cache-fresh.json
           if-no-files-found: error
       - name: Retain the mastodon-sccache BoringCache fresh result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-sccache-boringcache-fresh
-          path: benchmark-results/mastodon-sccache-boringcache-fresh.json
+          name: benchmark-mastodon-sccache${{ inputs.benchmark_id_suffix }}-boringcache-fresh
+          path: benchmark-results/mastodon-sccache${{ inputs.benchmark_id_suffix }}-boringcache-fresh.json
           if-no-files-found: error
       - name: Retain the mastodon-streaming BoringCache fresh result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-streaming-boringcache-fresh
-          path: benchmark-results/mastodon-streaming-boringcache-fresh.json
+          name: benchmark-mastodon-streaming${{ inputs.benchmark_id_suffix }}-boringcache-fresh
+          path: benchmark-results/mastodon-streaming${{ inputs.benchmark_id_suffix }}-boringcache-fresh.json
           if-no-files-found: error
       - name: Retain the mastodon-streaming GitHub Actions fresh result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-streaming-actions-cache-fresh
-          path: benchmark-results/mastodon-streaming-actions-cache-fresh.json
+          name: benchmark-mastodon-streaming${{ inputs.benchmark_id_suffix }}-actions-cache-fresh
+          path: benchmark-results/mastodon-streaming${{ inputs.benchmark_id_suffix }}-actions-cache-fresh.json
           if-no-files-found: error

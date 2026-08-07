@@ -57,30 +57,30 @@ jobs:
       - name: Retain the mastodon BoringCache rolling result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-boringcache-rolling
-          path: benchmark-results/mastodon-boringcache-rolling.json
+          name: benchmark-mastodon${{ inputs.benchmark_id_suffix }}-boringcache-rolling
+          path: benchmark-results/mastodon${{ inputs.benchmark_id_suffix }}-boringcache-rolling.json
           if-no-files-found: error
       - name: Retain the mastodon GitHub Actions rolling result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-actions-cache-rolling
-          path: benchmark-results/mastodon-actions-cache-rolling.json
+          name: benchmark-mastodon${{ inputs.benchmark_id_suffix }}-actions-cache-rolling
+          path: benchmark-results/mastodon${{ inputs.benchmark_id_suffix }}-actions-cache-rolling.json
           if-no-files-found: error
       - name: Retain the mastodon-sccache BoringCache rolling result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-sccache-boringcache-rolling
-          path: benchmark-results/mastodon-sccache-boringcache-rolling.json
+          name: benchmark-mastodon-sccache${{ inputs.benchmark_id_suffix }}-boringcache-rolling
+          path: benchmark-results/mastodon-sccache${{ inputs.benchmark_id_suffix }}-boringcache-rolling.json
           if-no-files-found: error
       - name: Retain the mastodon-streaming BoringCache rolling result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-streaming-boringcache-rolling
-          path: benchmark-results/mastodon-streaming-boringcache-rolling.json
+          name: benchmark-mastodon-streaming${{ inputs.benchmark_id_suffix }}-boringcache-rolling
+          path: benchmark-results/mastodon-streaming${{ inputs.benchmark_id_suffix }}-boringcache-rolling.json
           if-no-files-found: error
       - name: Retain the mastodon-streaming GitHub Actions rolling result
         uses: actions/upload-artifact@v6
         with:
-          name: benchmark-mastodon-streaming-actions-cache-rolling
-          path: benchmark-results/mastodon-streaming-actions-cache-rolling.json
+          name: benchmark-mastodon-streaming${{ inputs.benchmark_id_suffix }}-actions-cache-rolling
+          path: benchmark-results/mastodon-streaming${{ inputs.benchmark_id_suffix }}-actions-cache-rolling.json
           if-no-files-found: error
