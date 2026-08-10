@@ -30,6 +30,9 @@ runs:
           git -C upstream fetch --depth 1 origin "$UPSTREAM_REF"
           git -C upstream checkout --detach FETCH_HEAD
         fi
+    - name: Verify the upstream benchmark recipe
+      shell: bash
+      run: python3 ./scripts/verify-upstream-recipe.py
     - name: Prepare clean Mastodon source
       shell: bash
       env:
@@ -53,6 +56,7 @@ runs:
         source_url="$(git config -f .gitmodules submodule.upstream.url)"
         echo "source_repository=$(printf '%s' "${source_url#https://github.com/}" | sed 's/\.git$//')" >> "$GITHUB_OUTPUT"
         echo "source_sha=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "version_prerelease=nightly.$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
     - name: Log in to the GitHub Container Registry
       if: inputs.push_image == 'true' && github.ref == 'refs/heads/main'
       uses: docker/login-action@v3
@@ -85,9 +89,14 @@ runs:
         DOCKER_BUILD_RECORD_UPLOAD: "false"
       with:
         context: upstream
-        file: ${{ inputs.workload == 'server' && 'scenarios/mastodon-sccache/Dockerfile' || 'upstream/streaming/Dockerfile' }}
+        file: ${{ inputs.workload == 'server' && inputs.docker_tool_cache == 'true' && 'scenarios/mastodon-sccache/Dockerfile' || inputs.workload == 'server' && 'upstream/Dockerfile' || 'upstream/streaming/Dockerfile' }}
+        platforms: linux/amd64
         tags: ghcr.io/${{ github.repository_owner }}/${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}:actions-cache
         push: ${{ inputs.push_image == 'true' && github.ref == 'refs/heads/main' }}
+        build-args: |
+          MASTODON_VERSION_PRERELEASE=${{ steps.scope.outputs.version_prerelease }}
+          MASTODON_VERSION_METADATA=
+          SOURCE_COMMIT=${{ steps.scope.outputs.source_sha }}
         provenance: false
         cache-from: type=gha,scope=${{ steps.scope.outputs.cache_scope }}
         cache-to: type=gha,scope=${{ steps.scope.outputs.cache_scope }},mode=max
@@ -101,10 +110,15 @@ runs:
         mode: docker
         trust-policy: publish
         context: upstream
-        dockerfile: ${{ inputs.workload == 'server' && 'scenarios/mastodon-sccache/Dockerfile' || 'upstream/streaming/Dockerfile' }}
+        dockerfile: ${{ inputs.workload == 'server' && inputs.docker_tool_cache == 'true' && 'scenarios/mastodon-sccache/Dockerfile' || inputs.workload == 'server' && 'upstream/Dockerfile' || 'upstream/streaming/Dockerfile' }}
         image: ghcr.io/${{ github.repository_owner }}/${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
         tags: boringcache
         push: ${{ inputs.push_image == 'true' && github.ref == 'refs/heads/main' }}
+        platforms: linux/amd64
+        build-args: |
+          MASTODON_VERSION_PRERELEASE=${{ steps.scope.outputs.version_prerelease }}
+          MASTODON_VERSION_METADATA=
+          SOURCE_COMMIT=${{ steps.scope.outputs.source_sha }}
         load: false
         docker-tool-cache: ${{ inputs.docker_tool_cache == 'true' && format('sccache:{0}-sccache', steps.scope.outputs.cache_scope) || '' }}
         fail-on-cache-error: true
@@ -120,10 +134,15 @@ runs:
         mode: docker
         trust-policy: restore
         context: upstream
-        dockerfile: ${{ inputs.workload == 'server' && 'scenarios/mastodon-sccache/Dockerfile' || 'upstream/streaming/Dockerfile' }}
+        dockerfile: ${{ inputs.workload == 'server' && inputs.docker_tool_cache == 'true' && 'scenarios/mastodon-sccache/Dockerfile' || inputs.workload == 'server' && 'upstream/Dockerfile' || 'upstream/streaming/Dockerfile' }}
         image: ghcr.io/${{ github.repository_owner }}/${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
         tags: boringcache
         push: ${{ inputs.push_image == 'true' && github.ref == 'refs/heads/main' }}
+        platforms: linux/amd64
+        build-args: |
+          MASTODON_VERSION_PRERELEASE=${{ steps.scope.outputs.version_prerelease }}
+          MASTODON_VERSION_METADATA=
+          SOURCE_COMMIT=${{ steps.scope.outputs.source_sha }}
         load: false
         docker-tool-cache: ${{ inputs.docker_tool_cache == 'true' && format('sccache:{0}-sccache', steps.scope.outputs.cache_scope) || '' }}
         fail-on-cache-miss: true
