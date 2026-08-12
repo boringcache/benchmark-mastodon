@@ -106,7 +106,7 @@ awk '
 
   in_media_build && $0 == "ARG TARGETPLATFORM" {
     print
-    print "ARG SCCACHE_VERSION=v0.14.0"
+    print "ARG SCCACHE_VERSION=v0.17.0"
     media_sccache_arg += 1
     next
   }

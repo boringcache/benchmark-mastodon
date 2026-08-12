@@ -6,6 +6,7 @@ scenario="${1:-base}"
 
 git -C "${repo_root}/upstream" reset --hard
 git -C "${repo_root}/upstream" clean -fdx
+"${repo_root}/scripts/check-mastodon-ccache-dockerfile.sh"
 "${repo_root}/scripts/check-mastodon-sccache-dockerfile.sh"
 
 case "${scenario}" in

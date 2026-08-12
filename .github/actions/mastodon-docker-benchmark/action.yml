@@ -9,7 +9,7 @@ inputs:
   push_image: {required: false, default: "false"}
   cli_version: {required: false, default: ""}
   buildkit_image: {required: false, default: ""}
-  docker_tool_cache: {required: false, default: "false"}
+  compiler_cache: {required: false, default: ""}
   upstream_ref: {required: false, default: ""}
 runs:
   using: composite
@@ -44,6 +44,8 @@ runs:
       env:
         BENCHMARK_ID: ${{ inputs.benchmark_id }}
         CACHE_LANE: ${{ inputs.cache_lane }}
+        COMPILER_CACHE: ${{ inputs.compiler_cache }}
+        WORKLOAD: ${{ inputs.workload }}
       run: |
         set -euo pipefail
         ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9._-' '-')"
@@ -51,8 +53,32 @@ runs:
         ref_slug="${ref_slug%-}"
         ref_slug="${ref_slug:-main}"
         if [[ "$CACHE_LANE" == "rolling" ]]; then cache_scope="${BENCHMARK_ID}-rolling-${ref_slug}"; else cache_scope="${BENCHMARK_ID}-run-r${GITHUB_RUN_ID}-a${GITHUB_RUN_ATTEMPT}"; fi
+        case "${WORKLOAD}:${COMPILER_CACHE}" in
+          server:)
+            dockerfile=upstream/Dockerfile
+            image=mastodon-benchmark
+            docker_tool_cache=
+            ;;
+          server:ccache|server:sccache)
+            dockerfile="scenarios/mastodon-${COMPILER_CACHE}/Dockerfile"
+            image="mastodon-${COMPILER_CACHE}-benchmark"
+            docker_tool_cache="${COMPILER_CACHE}:${cache_scope}-${COMPILER_CACHE}"
+            ;;
+          streaming:)
+            dockerfile=upstream/streaming/Dockerfile
+            image=mastodon-streaming-benchmark
+            docker_tool_cache=
+            ;;
+          *)
+            echo "Unsupported Mastodon benchmark recipe: workload=${WORKLOAD} compiler_cache=${COMPILER_CACHE}" >&2
+            exit 2
+            ;;
+        esac
         ./scripts/scope-boringcache-run.sh "$cache_scope"
         echo "cache_scope=${cache_scope}" >> "$GITHUB_OUTPUT"
+        echo "docker_tool_cache=${docker_tool_cache}" >> "$GITHUB_OUTPUT"
+        echo "dockerfile=${dockerfile}" >> "$GITHUB_OUTPUT"
+        echo "image=${image}" >> "$GITHUB_OUTPUT"
         source_url="$(git config -f .gitmodules submodule.upstream.url)"
         echo "source_repository=$(printf '%s' "${source_url#https://github.com/}" | sed 's/\.git$//')" >> "$GITHUB_OUTPUT"
         echo "source_sha=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -89,9 +115,9 @@ runs:
         DOCKER_BUILD_RECORD_UPLOAD: "false"
       with:
         context: upstream
-        file: ${{ inputs.workload == 'server' && inputs.docker_tool_cache == 'true' && 'scenarios/mastodon-sccache/Dockerfile' || inputs.workload == 'server' && 'upstream/Dockerfile' || 'upstream/streaming/Dockerfile' }}
+        file: ${{ steps.scope.outputs.dockerfile }}
         platforms: linux/amd64
-        tags: ghcr.io/${{ github.repository_owner }}/${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}:actions-cache
+        tags: ghcr.io/${{ github.repository_owner }}/${{ steps.scope.outputs.image }}:actions-cache
         push: ${{ inputs.push_image == 'true' && github.ref == 'refs/heads/main' }}
         build-args: |
           MASTODON_VERSION_PRERELEASE=${{ steps.scope.outputs.version_prerelease }}
@@ -103,15 +129,15 @@ runs:
     - name: Publish with BoringCache
       id: publish
       if: inputs.strategy == 'boringcache' && inputs.phase == 'publish'
-      uses: boringcache/one@1d01e5dbf19ce259f921aa353d5e3e4ac5f942e4 # v1 / 1.19.0
+      uses: boringcache/one@e24257b122813ad11d53b9ed024b474ca4946ad2 # v1 / 1.19.1
       with:
         cli-version: ${{ inputs.cli_version }}
         setup: none
         mode: docker
         trust-policy: publish
         context: upstream
-        dockerfile: ${{ inputs.workload == 'server' && inputs.docker_tool_cache == 'true' && 'scenarios/mastodon-sccache/Dockerfile' || inputs.workload == 'server' && 'upstream/Dockerfile' || 'upstream/streaming/Dockerfile' }}
-        image: ghcr.io/${{ github.repository_owner }}/${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
+        dockerfile: ${{ steps.scope.outputs.dockerfile }}
+        image: ghcr.io/${{ github.repository_owner }}/${{ steps.scope.outputs.image }}
         tags: boringcache
         push: ${{ inputs.push_image == 'true' && github.ref == 'refs/heads/main' }}
         platforms: linux/amd64
@@ -120,22 +146,22 @@ runs:
           MASTODON_VERSION_METADATA=
           SOURCE_COMMIT=${{ steps.scope.outputs.source_sha }}
         load: false
-        docker-tool-cache: ${{ inputs.docker_tool_cache == 'true' && format('sccache:{0}-sccache', steps.scope.outputs.cache_scope) || '' }}
+        docker-tool-cache: ${{ steps.scope.outputs.docker_tool_cache }}
         fail-on-cache-error: true
         metadata-hints: benchmark=${{ inputs.benchmark_id }},phase=${{ inputs.cache_lane == 'rolling' && 'rolling' || 'fresh-cold' }}
         managed-buildkit-image: ${{ inputs.buildkit_image }}
     - name: Restore with BoringCache
       id: restore
       if: inputs.strategy == 'boringcache' && inputs.phase == 'warm'
-      uses: boringcache/one@1d01e5dbf19ce259f921aa353d5e3e4ac5f942e4 # v1 / 1.19.0
+      uses: boringcache/one@e24257b122813ad11d53b9ed024b474ca4946ad2 # v1 / 1.19.1
       with:
         cli-version: ${{ inputs.cli_version }}
         setup: none
         mode: docker
         trust-policy: restore
         context: upstream
-        dockerfile: ${{ inputs.workload == 'server' && inputs.docker_tool_cache == 'true' && 'scenarios/mastodon-sccache/Dockerfile' || inputs.workload == 'server' && 'upstream/Dockerfile' || 'upstream/streaming/Dockerfile' }}
-        image: ghcr.io/${{ github.repository_owner }}/${{ inputs.workload == 'server' && 'mastodon-benchmark' || 'mastodon-streaming-benchmark' }}
+        dockerfile: ${{ steps.scope.outputs.dockerfile }}
+        image: ghcr.io/${{ github.repository_owner }}/${{ steps.scope.outputs.image }}
         tags: boringcache
         push: ${{ inputs.push_image == 'true' && github.ref == 'refs/heads/main' }}
         platforms: linux/amd64
@@ -144,7 +170,7 @@ runs:
           MASTODON_VERSION_METADATA=
           SOURCE_COMMIT=${{ steps.scope.outputs.source_sha }}
         load: false
-        docker-tool-cache: ${{ inputs.docker_tool_cache == 'true' && format('sccache:{0}-sccache', steps.scope.outputs.cache_scope) || '' }}
+        docker-tool-cache: ${{ steps.scope.outputs.docker_tool_cache }}
         fail-on-cache-miss: true
         fail-on-cache-error: true
         metadata-hints: benchmark=${{ inputs.benchmark_id }},phase=fresh-warm

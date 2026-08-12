@@ -28,15 +28,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {provider: GitHub Actions, case: Mastodon server, strategy: actions-cache, workload: server, benchmark_id: mastodon, docker_tool_cache: false}
-          - {provider: BoringCache, case: Mastodon server, strategy: boringcache, workload: server, benchmark_id: mastodon, docker_tool_cache: false}
-          - {provider: BoringCache, case: Mastodon server sccache, strategy: boringcache, workload: server, benchmark_id: mastodon-sccache, docker_tool_cache: true}
-          - {provider: GitHub Actions, case: Mastodon streaming, strategy: actions-cache, workload: streaming, benchmark_id: mastodon-streaming, docker_tool_cache: false}
-          - {provider: BoringCache, case: Mastodon streaming, strategy: boringcache, workload: streaming, benchmark_id: mastodon-streaming, docker_tool_cache: false}
+          - {provider: GitHub Actions, case: Mastodon server, strategy: actions-cache, workload: server, benchmark_id: mastodon, compiler_cache: ""}
+          - {provider: BoringCache, case: Mastodon server, strategy: boringcache, workload: server, benchmark_id: mastodon, compiler_cache: ""}
+          - {provider: BoringCache, case: Mastodon server ccache, strategy: boringcache, workload: server, benchmark_id: mastodon-ccache, compiler_cache: ccache}
+          - {provider: BoringCache, case: Mastodon server sccache, strategy: boringcache, workload: server, benchmark_id: mastodon-sccache, compiler_cache: sccache}
+          - {provider: GitHub Actions, case: Mastodon streaming, strategy: actions-cache, workload: streaming, benchmark_id: mastodon-streaming, compiler_cache: ""}
+          - {provider: BoringCache, case: Mastodon streaming, strategy: boringcache, workload: streaming, benchmark_id: mastodon-streaming, compiler_cache: ""}
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/mastodon-docker-benchmark
-        with: {strategy: "${{ matrix.strategy }}", workload: "${{ matrix.workload }}", cache_lane: fresh, phase: publish, benchmark_id: "${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}", cli_version: "${{ inputs.cli_version }}", buildkit_image: "${{ inputs.buildkit_image }}", docker_tool_cache: "${{ matrix.docker_tool_cache }}", upstream_ref: "${{ inputs.upstream_ref }}"}
+        with: {strategy: "${{ matrix.strategy }}", workload: "${{ matrix.workload }}", cache_lane: fresh, phase: publish, benchmark_id: "${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}", cli_version: "${{ inputs.cli_version }}", buildkit_image: "${{ inputs.buildkit_image }}", compiler_cache: "${{ matrix.compiler_cache }}", upstream_ref: "${{ inputs.upstream_ref }}"}
   warm:
     name: ${{ matrix.provider }} ${{ matrix.case }} warm
     needs: cold
@@ -46,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/mastodon-docker-benchmark
-        with: {strategy: "${{ matrix.strategy }}", workload: "${{ matrix.workload }}", cache_lane: fresh, phase: warm, benchmark_id: "${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}", cli_version: "${{ inputs.cli_version }}", buildkit_image: "${{ inputs.buildkit_image }}", docker_tool_cache: "${{ matrix.docker_tool_cache }}", upstream_ref: "${{ inputs.upstream_ref }}"}
+        with: {strategy: "${{ matrix.strategy }}", workload: "${{ matrix.workload }}", cache_lane: fresh, phase: warm, benchmark_id: "${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}", cli_version: "${{ inputs.cli_version }}", buildkit_image: "${{ inputs.buildkit_image }}", compiler_cache: "${{ matrix.compiler_cache }}", upstream_ref: "${{ inputs.upstream_ref }}"}
   report:
     name: Mastodon Docker fresh report
     needs: warm
@@ -82,6 +83,12 @@ jobs:
         with:
           name: benchmark-mastodon-sccache${{ inputs.benchmark_id_suffix }}-boringcache-fresh
           path: benchmark-results/mastodon-sccache${{ inputs.benchmark_id_suffix }}-boringcache-fresh.json
+          if-no-files-found: error
+      - name: Retain the mastodon-ccache BoringCache fresh result
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-mastodon-ccache${{ inputs.benchmark_id_suffix }}-boringcache-fresh
+          path: benchmark-results/mastodon-ccache${{ inputs.benchmark_id_suffix }}-boringcache-fresh.json
           if-no-files-found: error
       - name: Retain the mastodon-streaming BoringCache fresh result
         uses: actions/upload-artifact@v6

@@ -158,7 +158,9 @@ RUN \
 FROM ${BASE_REGISTRY}/ruby:${RUBY_VERSION}-slim-${DEBIAN_VERSION} AS media-build
 
 ARG TARGETPLATFORM
-ARG SCCACHE_VERSION=v0.17.0
+ARG CCACHE_VERSION=4.13.6
+ARG CCACHE_STORAGE_HTTP_VERSION=0.8
+ENV CC="ccache cc" CXX="ccache c++" CCACHE_COMPILERCHECK=content
 
 # Set default shell used for running commands
 SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
@@ -211,14 +213,25 @@ RUN \
 RUN set -eux; \
   arch="$(dpkg --print-architecture)"; \
   case "$arch" in \
-    amd64) sccache_arch="x86_64" ;; \
-    arm64) sccache_arch="aarch64" ;; \
-    *) echo "unsupported sccache architecture: ${arch}" >&2; exit 1 ;; \
+    amd64) ccache_arch=x86_64; helper_arch=amd64; ccache_sha=567b1b648411819590f918f045218c92da14418bdec3b30db94a3b4f5d77cf13; helper_sha=2c2cfafa39f5a4628201ccc11c81829197519159aa128fe00ea251f1f4f2461c ;; \
+    arm64) ccache_arch=aarch64; helper_arch=arm64; ccache_sha=fae67fb810e1f0d390409af6603355483572229e19183e68574cd0f851a6fb98; helper_sha=49587fb0534f5c6265fd1008267af795885f8297c6c51213708da74e4de9d475 ;; \
+    *) echo "unsupported ccache architecture: ${arch}" >&2; exit 1 ;; \
   esac; \
-  curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${sccache_arch}-unknown-linux-musl.tar.gz" | tar xz -C /tmp; \
-  mv "/tmp/sccache-${SCCACHE_VERSION}-${sccache_arch}-unknown-linux-musl/sccache" /usr/local/bin/sccache; \
-  chmod +x /usr/local/bin/sccache; \
-  sccache --version
+  ccache_archive="ccache-${CCACHE_VERSION}-linux-${ccache_arch}-glibc.tar.gz"; \
+  helper_archive="ccache-storage-http-go-${CCACHE_STORAGE_HTTP_VERSION}-linux-${helper_arch}.tar.gz"; \
+  curl -fsSL --retry 5 "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/${ccache_archive}" -o "/tmp/${ccache_archive}"; \
+  echo "${ccache_sha}  /tmp/${ccache_archive}" | sha256sum --check; \
+  curl -fsSL --retry 5 "https://github.com/ccache/ccache-storage-http-go/releases/download/v${CCACHE_STORAGE_HTTP_VERSION}/${helper_archive}" -o "/tmp/${helper_archive}"; \
+  echo "${helper_sha}  /tmp/${helper_archive}" | sha256sum --check; \
+  tar xzf "/tmp/${ccache_archive}" -C /tmp; \
+  tar xzf "/tmp/${helper_archive}" -C /tmp; \
+  install -m 0755 "/tmp/ccache-${CCACHE_VERSION}-linux-${ccache_arch}-glibc/ccache" /usr/local/bin/ccache; \
+  install -m 0755 "/tmp/ccache-storage-http-go-${CCACHE_STORAGE_HTTP_VERSION}-linux-${helper_arch}/ccache-storage-http" /usr/local/bin/ccache-storage-http; \
+  ccache --version; \
+  helper_version="$(ccache-storage-http --version 2>&1 || true)"; \
+  printf "%s\n" "$helper_version"; \
+  printf "%s\n" "$helper_version" | grep -F "Version: ${CCACHE_STORAGE_HTTP_VERSION}"; \
+  rm -rf /tmp/ccache-*
 
 # Create temporary libvips specific build layer
 FROM media-build AS libvips
@@ -237,29 +250,12 @@ RUN tar xf vips-${VIPS_VERSION}.tar.xz;
 WORKDIR /usr/local/libvips/src/vips-${VIPS_VERSION}
 
 # Configure libvips
-RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
-  if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
-    . /run/secrets/boringcache-tool-cache-env; \
-    export SCCACHE_SERVER_PORT=42261; \
-  fi; \
-  meson setup build --prefix /usr/local/libvips --libdir=lib -Ddeprecated=false -Dintrospection=disabled -Dmodules=disabled -Dexamples=false
+RUN meson setup build --prefix /usr/local/libvips --libdir=lib -Ddeprecated=false -Dintrospection=disabled -Dmodules=disabled -Dexamples=false
 
 WORKDIR /usr/local/libvips/src/vips-${VIPS_VERSION}/build
 
 # Compile and install libvips
-RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
-  if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
-    . /run/secrets/boringcache-tool-cache-env; \
-    export SCCACHE_SERVER_PORT=42261; \
-    export SCCACHE_ERROR_LOG=/tmp/boringcache-sccache-libvips.log; \
-    sccache --start-server || true; \
-  fi; \
-  ninja && ninja install; \
-  if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
-    echo BEGIN_BORINGCACHE_SCCACHE_STATS; \
-    sccache --show-stats; \
-    echo END_BORINGCACHE_SCCACHE_STATS; \
-  fi
+RUN ninja && ninja install && ccache --show-stats
 
 # Create temporary ffmpeg specific build layer
 FROM media-build AS ffmpeg
@@ -278,13 +274,7 @@ RUN tar xf n${FFMPEG_VERSION}.tar.gz && mv FFmpeg-n${FFMPEG_VERSION} ffmpeg-${FF
 WORKDIR /usr/local/ffmpeg/src/ffmpeg-${FFMPEG_VERSION}
 
 # Configure and compile ffmpeg
-RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
-  if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
-    . /run/secrets/boringcache-tool-cache-env; \
-    export SCCACHE_SERVER_PORT=42262; \
-    export SCCACHE_ERROR_LOG=/tmp/boringcache-sccache-ffmpeg.log; \
-    sccache --start-server || true; \
-  fi; \
+RUN \
   configure_compiler_args=(); \
   if [ -n "${CC:-}" ]; then \
     configure_compiler_args+=(--cc="$CC"); \
@@ -319,17 +309,15 @@ RUN --mount=type=secret,id=boringcache-tool-cache-env,required=false \
   ; \
   make -j"$(nproc)"; \
   make install; \
-  if [ -f /run/secrets/boringcache-tool-cache-env ]; then \
-    echo BEGIN_BORINGCACHE_SCCACHE_STATS; \
-    sccache --show-stats; \
-    echo END_BORINGCACHE_SCCACHE_STATS; \
-  fi
+  ccache --show-stats
 
 # Create temporary build layer from base image for Ruby dependencies
 FROM ruby AS ruby-build
 
-# Keep Ruby native extension builds compatible with Ruby images whose compiler config invokes sccache.
-COPY --from=media-build /usr/local/bin/sccache /usr/local/bin/sccache
+# Use ccache for native extensions while keeping compiler selection in this Dockerfile.
+COPY --from=media-build /usr/local/bin/ccache /usr/local/bin/ccache
+COPY --from=media-build /usr/local/bin/ccache-storage-http /usr/local/bin/ccache-storage-http
+ENV CC="ccache cc" CXX="ccache c++" CCACHE_COMPILERCHECK=content
 
 ARG TARGETPLATFORM
 
@@ -380,7 +368,8 @@ RUN \
   # Configure bundle to not warn about root user
   bundle config set silence_root_warning "true"; \
   # Download and install required Gems
-  bundle install -j"$(nproc)";
+  bundle install -j"$(nproc)"; \
+  ccache --show-stats
 
 # Create temporary assets build layer from build layer
 FROM ruby-build AS precompiler

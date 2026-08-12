@@ -32,6 +32,7 @@ jobs:
 
           git submodule sync --recursive
           git submodule update --init --remote --checkout upstream
+          ./scripts/check-mastodon-ccache-dockerfile.sh --write
           ./scripts/check-mastodon-sccache-dockerfile.sh --write
 
           github_repo_slug() {
@@ -54,6 +55,6 @@ jobs:
             exit 0
           fi
 
-          git add upstream scenarios/mastodon-sccache/Dockerfile
+          git add upstream scenarios/mastodon-ccache/Dockerfile scenarios/mastodon-sccache/Dockerfile
           git commit -m "Update upstream to ${upstream_repo}@${commit_sha}"
           git push origin HEAD:main

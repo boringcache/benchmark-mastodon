@@ -24,8 +24,11 @@ def main() -> int:
         caller = (ROOT / "upstream/.github/workflows/build-nightly.yml").read_text()
         require("file_to_build: Dockerfile" in caller and "file_to_build: streaming/Dockerfile" in caller, "nightly workload selection changed")
         action = (ROOT / ".github/actions/mastodon-docker-benchmark/action.yml").read_text()
-        require("inputs.workload == 'server' && 'upstream/Dockerfile'" in action, "server baseline no longer uses upstream Dockerfile")
-        require("'upstream/streaming/Dockerfile'" in action, "streaming plan changed")
+        require("dockerfile=upstream/Dockerfile" in action, "server baseline no longer uses upstream Dockerfile")
+        require('dockerfile="scenarios/mastodon-${COMPILER_CACHE}/Dockerfile"' in action, "compiler-cache scenario selection changed")
+        require("dockerfile=upstream/streaming/Dockerfile" in action, "streaming plan changed")
+        require(action.count("steps.scope.outputs.dockerfile") == 3, "provider Dockerfile selection drifted")
+        require(action.count("steps.scope.outputs.docker_tool_cache") == 2, "BoringCache compiler-cache projection drifted")
         require(action.count("SOURCE_COMMIT=${{ steps.scope.outputs.source_sha }}") == 3, "provider commit arg drifted")
     except (KeyError, OSError, RuntimeError, tomllib.TOMLDecodeError) as error:
         print(f"Mastodon recipe mismatch: {error}", file=sys.stderr)
