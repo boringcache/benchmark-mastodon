@@ -14,5 +14,10 @@ grep -Fq 'tag = "mastodon-docker-local"' "$config_path" || {
   echo "Missing expected local Docker tag in ${config_path}" >&2
   exit 1
 }
+grep -Fq 'tag = "mastodon-sccache-local"' "$config_path" || {
+  echo "Missing expected local sccache tag in ${config_path}" >&2
+  exit 1
+}
 sed -i "s/tag = \"mastodon-docker-local\"/tag = \"${scope}-docker\"/" "$config_path"
-echo "Scoped the BoringCache Docker tag to ${scope}."
+sed -i "s/tag = \"mastodon-sccache-local\"/tag = \"${scope}-sccache\"/" "$config_path"
+echo "Scoped the BoringCache Docker and sccache tags to ${scope}."
