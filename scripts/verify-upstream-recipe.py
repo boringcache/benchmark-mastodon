@@ -13,11 +13,15 @@ def require(value: bool, message: str) -> None:
 
 def main() -> int:
     try:
-        command = tomllib.loads((ROOT / ".boringcache.toml").read_text())["adapters"]["docker"]["command"]
-        require(command[:4] == ["bash", "-euo", "pipefail", "-c"], "Docker plan must be argv-safe")
-        shell = command[4]
-        for fragment in ("upstream/Dockerfile", "upstream/streaming/Dockerfile", "--platform linux/amd64", "MASTODON_VERSION_PRERELEASE", "MASTODON_VERSION_METADATA=", "SOURCE_COMMIT"):
-            require(fragment in shell, f"Docker plan changed: {fragment}")
+        plan = tomllib.loads((ROOT / ".boringcache.toml").read_text())
+        command = plan["adapters"]["docker"]["command"]
+        require(command[:7] == ["docker", "buildx", "build", "--file", "__DOCKERFILE__", "--platform", "linux/amd64"], "Docker plan changed")
+        for fragment in ("MASTODON_VERSION_PRERELEASE=__PRERELEASE__", "MASTODON_VERSION_METADATA=", "SOURCE_COMMIT=__SOURCE_SHA__", "__IMAGE__"):
+            require(fragment in command, f"Docker plan changed: {fragment}")
+        require(plan["adapters"]["sccache"]["tag"] == "mastodon-sccache-local", "sccache plan changed")
+        activation = (ROOT / "scripts/activate-docker-plan.py").read_text()
+        for fragment in ("scenarios/mastodon-sccache/Dockerfile", "upstream/streaming/Dockerfile", 'tool-cache = ["sccache"]', '"--push"'):
+            require(fragment in activation, f"Docker plan activation changed: {fragment}")
         upstream = (ROOT / "upstream/.github/workflows/build-container-image.yml").read_text()
         for fragment in ("- linux/amd64", "- linux/arm64", "file: ${{ inputs.file_to_build }}", "MASTODON_VERSION_PRERELEASE", "MASTODON_VERSION_METADATA", "SOURCE_COMMIT", "push-by-digest=true"):
             require(fragment in upstream, f"upstream image workflow changed: {fragment}")
@@ -26,7 +30,8 @@ def main() -> int:
         action = (ROOT / ".github/actions/mastodon-docker-benchmark/action.yml").read_text()
         require("inputs.workload == 'server' && 'upstream/Dockerfile'" in action, "server baseline no longer uses upstream Dockerfile")
         require("'upstream/streaming/Dockerfile'" in action, "streaming plan changed")
-        require(action.count("SOURCE_COMMIT=${{ steps.scope.outputs.source_sha }}") == 3, "provider commit arg drifted")
+        require(action.count("SOURCE_COMMIT=${{ steps.scope.outputs.source_sha }}") == 1, "Actions/cache commit arg drifted")
+        require(action.count("Activate the BoringCache Docker plan") == 1, "BoringCache plan activation drifted")
     except (KeyError, OSError, RuntimeError, tomllib.TOMLDecodeError) as error:
         print(f"Mastodon recipe mismatch: {error}", file=sys.stderr)
         return 1
