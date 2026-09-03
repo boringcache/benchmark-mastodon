@@ -1,0 +1,97 @@
+name: "Mastodon Docker Fresh"
+run-name: >-
+  ${{ format('Benchmark {0} | {1}', github.event_name == 'pull_request' && 'Validation' || inputs.cli_version != '' && 'Canary' || 'Fresh', github.event_name == 'schedule' && 'Weekly' || github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || format('Manual dispatch ({0})', github.ref_name)) }}
+on:
+  workflow_dispatch:
+    inputs:
+      buildkit_image: {description: "Optional managed BoringCache BuildKit image.", required: false, type: string, default: ""}
+      cli_version: {description: "Optional exact BoringCache CLI release tag.", required: false, type: string, default: ""}
+      benchmark_id_suffix: {description: "Optional suffix for isolated comparison runs.", required: false, type: string, default: ""}
+      upstream_ref: {description: "Optional Mastodon ref or SHA instead of the pinned submodule commit.", required: false, type: string, default: ""}
+      runner_label: {description: "Optional runner label for a manual main-branch experiment.", required: false, type: string, default: ""}
+  schedule: [{cron: "0 4 * * 2"}]
+  pull_request:
+    paths: [".boringcache.toml", ".gitmodules", ".github/actions/mastodon-docker-benchmark/**", ".github/workflows/mastodon-docker-benchmark.yml", ".github/workflows/mastodon-fresh-benchmark.yml", "scenarios/**", "scripts/**", "upstream"]
+concurrency: {group: "${{ github.workflow }}-${{ github.ref_name }}", cancel-in-progress: false}
+permissions: {contents: read, actions: write, packages: read}
+env:
+  BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+  BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+  BORINGCACHE_NO_GIT: "true"
+jobs:
+  cold:
+    name: ${{ matrix.provider }} ${{ matrix.case }} cold
+    if: inputs.runner_label == '' || github.ref_name == 'main'
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.runner_label || 'ubuntu-latest' }}
+    timeout-minutes: 180
+    strategy: &mastodon_strategy
+      fail-fast: false
+      matrix:
+        include:
+          - {provider: GitHub Actions, case: Mastodon server, strategy: actions-cache, workload: server, benchmark_id: mastodon, docker_tool_cache: false}
+          - {provider: BoringCache, case: Mastodon server, strategy: boringcache, workload: server, benchmark_id: mastodon, docker_tool_cache: false}
+          - {provider: BoringCache, case: Mastodon server sccache, strategy: boringcache, workload: server, benchmark_id: mastodon-sccache, docker_tool_cache: true}
+          - {provider: GitHub Actions, case: Mastodon streaming, strategy: actions-cache, workload: streaming, benchmark_id: mastodon-streaming, docker_tool_cache: false}
+          - {provider: BoringCache, case: Mastodon streaming, strategy: boringcache, workload: streaming, benchmark_id: mastodon-streaming, docker_tool_cache: false}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/mastodon-docker-benchmark
+        with: {strategy: "${{ matrix.strategy }}", workload: "${{ matrix.workload }}", cache_lane: fresh, phase: publish, benchmark_id: "${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}", cli_version: "${{ inputs.cli_version }}", buildkit_image: "${{ inputs.buildkit_image }}", docker_tool_cache: "${{ matrix.docker_tool_cache }}", upstream_ref: "${{ inputs.upstream_ref }}"}
+  warm:
+    name: ${{ matrix.provider }} ${{ matrix.case }} warm
+    needs: cold
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.runner_label || 'ubuntu-latest' }}
+    timeout-minutes: 180
+    strategy: *mastodon_strategy
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/mastodon-docker-benchmark
+        with: {strategy: "${{ matrix.strategy }}", workload: "${{ matrix.workload }}", cache_lane: fresh, phase: warm, benchmark_id: "${{ format('{0}{1}', matrix.benchmark_id, inputs.benchmark_id_suffix) }}", cli_version: "${{ inputs.cli_version }}", buildkit_image: "${{ inputs.buildkit_image }}", docker_tool_cache: "${{ matrix.docker_tool_cache }}", upstream_ref: "${{ inputs.upstream_ref }}"}
+  report:
+    name: Mastodon Docker fresh report
+    needs: warm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download the benchmark phase evidence
+        uses: actions/download-artifact@v6
+        with:
+          pattern: phase-*
+          path: phase-evidence
+      - name: Publish the Mastodon Docker benchmark report
+        run: |
+          python3 ./scripts/benchmark-report.py summarize \
+            --title "Mastodon Docker fresh benchmark" \
+            --input-dir phase-evidence \
+            --output-dir benchmark-results
+      - name: Retain the mastodon BoringCache fresh result
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-mastodon${{ inputs.benchmark_id_suffix }}-boringcache-fresh
+          path: benchmark-results/mastodon${{ inputs.benchmark_id_suffix }}-boringcache-fresh.json
+          if-no-files-found: error
+      - name: Retain the mastodon GitHub Actions fresh result
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-mastodon${{ inputs.benchmark_id_suffix }}-actions-cache-fresh
+          path: benchmark-results/mastodon${{ inputs.benchmark_id_suffix }}-actions-cache-fresh.json
+          if-no-files-found: error
+      - name: Retain the mastodon-sccache BoringCache fresh result
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-mastodon-sccache${{ inputs.benchmark_id_suffix }}-boringcache-fresh
+          path: benchmark-results/mastodon-sccache${{ inputs.benchmark_id_suffix }}-boringcache-fresh.json
+          if-no-files-found: error
+      - name: Retain the mastodon-streaming BoringCache fresh result
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-mastodon-streaming${{ inputs.benchmark_id_suffix }}-boringcache-fresh
+          path: benchmark-results/mastodon-streaming${{ inputs.benchmark_id_suffix }}-boringcache-fresh.json
+          if-no-files-found: error
+      - name: Retain the mastodon-streaming GitHub Actions fresh result
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-mastodon-streaming${{ inputs.benchmark_id_suffix }}-actions-cache-fresh
+          path: benchmark-results/mastodon-streaming${{ inputs.benchmark_id_suffix }}-actions-cache-fresh.json
+          if-no-files-found: error
