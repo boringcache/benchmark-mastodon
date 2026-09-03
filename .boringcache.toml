@@ -1,9 +1,0 @@
-workspace = "boringcache/benchmark-mastodon"
-
-[adapters.docker]
-tag = "mastodon-docker-local"
-metadata-hints = ["benchmark=mastodon", "upstream-job=build-image-amd64"]
-command = [
-  "bash", "-euo", "pipefail", "-c",
-  "workload=${MASTODON_WORKLOAD:-server}; case ${workload} in server) dockerfile=upstream/Dockerfile;; streaming) dockerfile=upstream/streaming/Dockerfile;; *) exit 2;; esac; source_sha=$(git -C upstream rev-parse HEAD); prerelease=nightly.$(date -u +%Y-%m-%d); exec docker buildx build --file ${dockerfile} --platform linux/amd64 --build-arg MASTODON_VERSION_PRERELEASE=${prerelease} --build-arg MASTODON_VERSION_METADATA= --build-arg SOURCE_COMMIT=${source_sha} --tag mastodon-${workload}-benchmark:local upstream",
-]
