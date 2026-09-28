@@ -53,9 +53,16 @@ def exports(values, paths):
 
 if operation == "plan":
     tag = "mastodon-prepared-" + os.environ["GITHUB_RUN_ID"]
+    entries = [("dependencies", state / "deps"), ("environment", state)]
+    if "PREPARED_PRODUCER_RUN" in os.environ:
+        run = os.environ["PREPARED_PRODUCER_RUN"]
+        attempt = os.environ["PREPARED_PRODUCER_ATTEMPT"]
+        assert run.isdigit() and attempt.isdigit(), "invalid producer identity"
+        tag = f"mastodon-refresh-{run}-{attempt}"
+        entries = [("parent", state), ("child", state)]
     config = root / ".boringcache.toml"
     with config.open("a") as stream:
-        for name, path in [("dependencies", state / "deps"), ("environment", state)]:
+        for name, path in entries:
             stream.write(
                 f'\n[entries.prepared-{name}]\ntag = "{tag}-{name}"\npath = "{path}"\n\n[profiles.prepared-{name}]\nentries = ["prepared-{name}"]\n'
             )
@@ -129,7 +136,7 @@ elif operation == "capture":
     print(
         f"Captured dependencies, runtimes, and {len(selected)} exact package payloads"
     )
-elif operation == "activate":
+elif operation in ("activate", "validate"):
     variant = os.environ["PREPARED_VARIANT"]
     deps = state / "deps"
     manifest = json.loads((deps / "manifest.json").read_text())
@@ -144,6 +151,9 @@ elif operation == "activate":
     assert manifest["state_path"] == str(state) and manifest["source_path"] == str(
         source
     ), "installation paths differ"
+    if operation == "validate":
+        print("Preparation inputs, host, and paths match")
+        raise SystemExit(0)
     values = {
         "BUNDLE_PATH": str(source / "vendor/bundle"),
         "BUNDLE_FROZEN": "true",
@@ -219,5 +229,23 @@ elif operation == "activate":
         json.dumps({"variant": variant, "exports": values, "paths": paths}, indent=2)
         + "\n"
     )
+elif operation == "refresh":
+    deps = state / "deps"
+    manifest = json.loads((deps / "manifest.json").read_text())
+    for name, origin in [
+        ("bundle", source / "vendor/bundle"),
+        ("node_modules", source / "node_modules"),
+        ("streaming_node_modules", source / "streaming/node_modules"),
+        ("yarn", source / ".yarn"),
+    ]:
+        if origin.exists():
+            destination = deps / name
+            destination.mkdir(exist_ok=True)
+            subprocess.run(
+                ["rsync", "-a", "--delete", str(origin) + "/", str(destination) + "/"],
+                check=True,
+            )
+    manifest["inputs"] = inputs()
+    (deps / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 else:
-    raise SystemExit("usage: prepared-state.py plan|capture|activate")
+    raise SystemExit("usage: prepared-state.py plan|capture|validate|activate|refresh")

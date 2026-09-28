@@ -31,6 +31,9 @@ else:
     data = json.loads(path.read_text())
     data["setup_seconds"] = time.monotonic() - data.pop("started_monotonic")
     data["ready_at"] = time.time()
+    data["source_ready"] = subprocess.check_output(
+        ["git", "-C", "upstream", "rev-parse", "HEAD"], text=True
+    ).strip()
     data["versions"] = {
         name: subprocess.check_output(command, text=True).strip()
         for name, command in [

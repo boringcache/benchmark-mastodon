@@ -1,19 +1,27 @@
 name: Mastodon prepared state
 on:
-  push:
-    branches: [prepared-state]
-    paths:
-      - .github/workflows/mastodon-prepared-state.yml
-      - .github/actions/prepared-*/**
-      - scripts/prepared-*
   workflow_dispatch:
     inputs:
+      experiment:
+        description: Preparation comparison, real dependency refresh, or independent handoff.
+        type: choice
+        options: [comparison, refresh, handoff]
+        default: comparison
+      producer_run:
+        description: Successful refresh run ID for an independent handoff.
+        type: string
+        default: ''
+      producer_attempt:
+        description: Producer run attempt.
+        type: string
+        default: '1'
       cli_version:
         description: Optional exact BoringCache CLI release tag.
         default: ''
         type: string
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: mastodon-prepared-state
   cancel-in-progress: false
@@ -29,6 +37,7 @@ env:
   BORINGCACHE_NO_GIT: 'true'
 jobs:
   seed:
+    if: inputs.experiment == 'comparison'
     name: GitHub Mastodon cold baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -105,6 +114,7 @@ jobs:
           path: ${{ runner.temp }}/prepared-evidence
           retention-days: 7
   compare:
+    if: inputs.experiment == 'comparison'
     name: Mastodon ${{ matrix.variant }} sample ${{ matrix.sample }}
     needs: seed
     runs-on: ubuntu-24.04
@@ -185,5 +195,201 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: prepared-${{ matrix.variant }}-${{ matrix.sample }}
+          path: ${{ runner.temp }}/prepared-evidence
+          retention-days: 7
+
+  parent:
+    if: inputs.experiment == 'refresh'
+    name: GitHub Mastodon preparation parent
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services: *services
+    env:
+      PREPARED_VARIANT: environment
+      PREPARED_ROLE: parent
+      PREPARED_PRODUCER_RUN: ${{ github.run_id }}
+      PREPARED_PRODUCER_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - &refresh_checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+      - run: python3 scripts/prepared-refresh.py select parent
+      - run: python3 scripts/prepared-timing.py start
+      - run: python3 scripts/prepared-state.py plan
+      - uses: ./.github/actions/prepared-baseline
+      - run: python3 scripts/prepared-refresh.py verify parent
+      - run: python3 scripts/prepared-timing.py ready
+      - name: Capture parent preparation
+        run: |
+          /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/capture-time.json" \
+            python3 scripts/prepared-state.py capture
+      - name: Configure parent publication
+        id: cache
+        uses: boringcache/one@f0fb9b2d926a32b10c543e92093ba00c5a291b79 # v1.33.0
+        env:
+          BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+          BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+        with:
+          mode: archive
+          trust-policy: publish
+          cache-profiles: prepared-parent
+          lookup-only: true
+          save: never
+          cli-version: ${{ inputs.cli_version }}
+          fail-on-cache-error: true
+      - &publish_refresh
+        name: Publish prepared state before application checks
+        env:
+          BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+          BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+        run: |
+          /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/save-time.json" \
+            boringcache run --profile "prepared-$PREPARED_ROLE" --skip-restore --write --fail-on-cache-error -- true
+          python3 scripts/prepared-refresh.py handoff "$PREPARED_ROLE"
+      - uses: ./.github/actions/prepared-checks
+      - &refresh_action_evidence
+        name: Retain Action evidence
+        if: always()
+        env:
+          CACHE_EVIDENCE: ${{ steps.cache.outputs.evidence-path }}
+        run: |
+          if [[ -n "$CACHE_EVIDENCE" && -f "$CACHE_EVIDENCE" ]]; then
+            cp "$CACHE_EVIDENCE" "$RUNNER_TEMP/prepared-evidence/boringcache-action.json"
+          fi
+      - &refresh_artifact
+        name: Retain refresh evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: prepared-refresh-${{ env.PREPARED_ROLE }}
+          path: ${{ runner.temp }}/prepared-evidence
+          retention-days: 7
+  child:
+    if: inputs.experiment == 'refresh'
+    needs: parent
+    name: GitHub Mastodon dependency update
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services: *services
+    env:
+      PREPARED_VARIANT: environment
+      PREPARED_ROLE: child
+      PREPARED_PRODUCER_RUN: ${{ github.run_id }}
+      PREPARED_PRODUCER_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - *refresh_checkout
+      - run: python3 scripts/prepared-refresh.py select parent
+      - run: python3 scripts/prepared-timing.py start
+      - run: python3 scripts/prepared-state.py plan
+      - name: Restore parent for dependency update
+        id: cache
+        uses: boringcache/one@f0fb9b2d926a32b10c543e92093ba00c5a291b79 # v1.33.0
+        env:
+          BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+          BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+        with:
+          mode: archive
+          trust-policy: publish
+          cache-profiles: prepared-parent
+          save: never
+          cli-version: ${{ inputs.cli_version }}
+          fail-on-cache-error: true
+          fail-on-cache-miss: true
+      - run: python3 scripts/prepared-state.py activate
+      - run: python3 scripts/prepared-refresh.py verify parent
+      - name: Apply actual upstream dependency update
+        run: |
+          python3 scripts/prepared-refresh.py select child
+          if python3 scripts/prepared-state.py validate 2> "$RUNNER_TEMP/prepared-evidence/stale-input-rejection.txt"; then
+            echo "Old preparation incorrectly accepted changed inputs" >&2
+            exit 1
+          fi
+          grep -F 'preparation inputs differ' "$RUNNER_TEMP/prepared-evidence/stale-input-rejection.txt"
+      - name: Install changed dependencies
+        working-directory: upstream
+        run: |
+          /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/update-time.json" \
+            yarn install --immutable 2>&1 | tee "$RUNNER_TEMP/prepared-evidence/update.log"
+      - run: python3 scripts/prepared-refresh.py verify child
+      - run: python3 scripts/prepared-timing.py ready
+      - name: Capture updated dependency directories
+        run: |
+          /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/capture-time.json" \
+            python3 scripts/prepared-state.py refresh
+          python3 scripts/prepared-state.py validate
+      - *publish_refresh
+      - uses: ./.github/actions/prepared-checks
+      - *refresh_action_evidence
+      - *refresh_artifact
+  handoff:
+    if: inputs.experiment == 'handoff'
+    name: GitHub Mastodon handoff ${{ matrix.role }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services: *services
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        role: [child, parent]
+    env:
+      PREPARED_VARIANT: environment
+      PREPARED_ROLE: ${{ matrix.role }}
+      PREPARED_PRODUCER_RUN: ${{ inputs.producer_run }}
+      PREPARED_PRODUCER_ATTEMPT: ${{ inputs.producer_attempt }}
+    steps:
+      - *refresh_checkout
+      - name: Receive producer metadata
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: prepared-refresh-${{ matrix.role }}
+          path: ${{ runner.temp }}/handoff
+          run-id: ${{ inputs.producer_run }}
+          github-token: ${{ github.token }}
+      - run: python3 scripts/prepared-refresh.py receive "$PREPARED_ROLE"
+      - run: python3 scripts/prepared-refresh.py select "$PREPARED_ROLE"
+      - run: python3 scripts/prepared-timing.py start
+      - run: python3 scripts/prepared-state.py plan
+      - name: Restore handed-off environment
+        id: cache
+        uses: boringcache/one@f0fb9b2d926a32b10c543e92093ba00c5a291b79 # v1.33.0
+        env:
+          BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+        with:
+          mode: archive
+          trust-policy: restore
+          cache-profiles: prepared-${{ matrix.role }}
+          save: never
+          cli-version: ${{ inputs.cli_version }}
+          fail-on-cache-error: true
+          fail-on-cache-miss: true
+      - name: Reject an incompatible image contract
+        run: |
+          if ImageVersion=incompatible python3 scripts/prepared-state.py validate 2> "$RUNNER_TEMP/prepared-evidence/host-rejection.txt"; then
+            echo "Incompatible image incorrectly accepted" >&2
+            exit 1
+          fi
+          grep -F 'runner image differs' "$RUNNER_TEMP/prepared-evidence/host-rejection.txt"
+      - run: python3 scripts/prepared-state.py activate
+      - name: Validate restored tools in a new step
+        working-directory: upstream
+        run: |
+          ruby -e 'abort "Ruby did not use restored runtime" unless File.realpath("/proc/self/exe").start_with?(ENV.fetch("RUNNER_TEMP") + "/mastodon-prepared/state/runtime/ruby/")'
+          node -e 'if (!process.execPath.startsWith(process.env.RUNNER_TEMP + "/mastodon-prepared/state/runtime/node/")) process.exit(1)'
+          bundle check
+          yarn --version
+          bundle exec ruby -rvips -e 'abort "image operation failed" unless Vips::Image.black(8, 8).width == 8'
+          ffmpeg -version
+      - run: python3 scripts/prepared-refresh.py verify "$PREPARED_ROLE"
+      - run: python3 scripts/prepared-timing.py ready
+      - uses: ./.github/actions/prepared-checks
+      - *refresh_action_evidence
+      - name: Retain handoff evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: prepared-handoff-${{ matrix.role }}
           path: ${{ runner.temp }}/prepared-evidence
           retention-days: 7
