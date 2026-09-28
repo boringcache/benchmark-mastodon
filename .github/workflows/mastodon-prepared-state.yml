@@ -46,7 +46,7 @@ jobs:
         options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
     env:
       PREPARED_VARIANT: baseline-cold
-    steps: &baseline
+    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
@@ -64,6 +64,7 @@ jobs:
           /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/capture-time.json" \
             python3 scripts/prepared-state.py capture
       - name: Configure prepared-state publication
+        id: cache
         if: env.PREPARED_VARIANT == 'baseline-cold'
         uses: boringcache/one@f0fb9b2d926a32b10c543e92093ba00c5a291b79 # v1.33.0
         env:
@@ -88,6 +89,14 @@ jobs:
           /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/save-environment-time.json" \
             boringcache run --profile prepared-environment --skip-restore --write --fail-on-cache-error -- true
       - uses: ./.github/actions/prepared-checks
+      - name: Retain Action evidence
+        if: always()
+        env:
+          CACHE_EVIDENCE: ${{ steps.cache.outputs.evidence-path }}
+        run: |
+          if [[ -n "$CACHE_EVIDENCE" && -f "$CACHE_EVIDENCE" ]]; then
+            cp "$CACHE_EVIDENCE" "$RUNNER_TEMP/prepared-evidence/boringcache-action.json"
+          fi
       - name: Retain workload evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -95,18 +104,9 @@ jobs:
           name: prepared-${{ env.PREPARED_VARIANT }}
           path: ${{ runner.temp }}/prepared-evidence
           retention-days: 7
-  baseline:
-    name: GitHub Mastodon warm baseline
+  compare:
+    name: Mastodon ${{ matrix.variant }} sample ${{ matrix.sample }}
     needs: seed
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    services: *services
-    env:
-      PREPARED_VARIANT: baseline-warm
-    steps: *baseline
-  prepared:
-    name: BoringCache Mastodon ${{ matrix.variant }}
-    needs: [seed, baseline]
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     services: *services
@@ -114,7 +114,16 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        variant: [dependencies, environment]
+        include:
+          - {variant: baseline-warm, sample: 1}
+          - {variant: dependencies, sample: 1}
+          - {variant: environment, sample: 1}
+          - {variant: environment, sample: 2}
+          - {variant: dependencies, sample: 2}
+          - {variant: baseline-warm, sample: 2}
+          - {variant: dependencies, sample: 3}
+          - {variant: baseline-warm, sample: 3}
+          - {variant: environment, sample: 3}
     env:
       PREPARED_VARIANT: ${{ matrix.variant }}
     steps:
@@ -127,11 +136,13 @@ jobs:
       - name: Resolve experiment entries
         run: python3 scripts/prepared-state.py plan
       - name: Prepare ordinary runtimes and system packages
-        if: matrix.variant == 'dependencies'
+        if: matrix.variant != 'environment'
         uses: ./.github/actions/prepared-baseline
         with:
-          install-dependencies: 'false'
+          install-dependencies: ${{ matrix.variant == 'baseline-warm' && 'true' || 'false' }}
       - name: Restore prepared state
+        if: matrix.variant != 'baseline-warm'
+        id: cache
         uses: boringcache/one@f0fb9b2d926a32b10c543e92093ba00c5a291b79 # v1.33.0
         env:
           BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
@@ -144,10 +155,16 @@ jobs:
           fail-on-cache-error: true
           fail-on-cache-miss: true
       - name: Activate restored dependencies
+        if: matrix.variant != 'baseline-warm'
         run: python3 scripts/prepared-state.py activate
       - name: Validate environment in a new step
+        if: matrix.variant != 'baseline-warm'
         working-directory: upstream
         run: |
+          if [[ "$PREPARED_VARIANT" == environment ]]; then
+            ruby -e 'abort "Ruby did not use restored runtime" unless File.realpath("/proc/self/exe").start_with?(ENV.fetch("RUNNER_TEMP") + "/mastodon-prepared/state/runtime/ruby/")'
+            node -e 'if (!process.execPath.startsWith(process.env.RUNNER_TEMP + "/mastodon-prepared/state/runtime/node/")) process.exit(1)'
+          fi
           bundle check
           yarn --version
           bundle exec ruby -rvips -e 'abort "image operation failed" unless Vips::Image.black(8, 8).width == 8'
@@ -155,10 +172,18 @@ jobs:
       - name: Record environment readiness
         run: python3 scripts/prepared-timing.py ready
       - uses: ./.github/actions/prepared-checks
+      - name: Retain Action evidence
+        if: always()
+        env:
+          CACHE_EVIDENCE: ${{ steps.cache.outputs.evidence-path }}
+        run: |
+          if [[ -n "$CACHE_EVIDENCE" && -f "$CACHE_EVIDENCE" ]]; then
+            cp "$CACHE_EVIDENCE" "$RUNNER_TEMP/prepared-evidence/boringcache-action.json"
+          fi
       - name: Retain workload evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: prepared-${{ matrix.variant }}
+          name: prepared-${{ matrix.variant }}-${{ matrix.sample }}
           path: ${{ runner.temp }}/prepared-evidence
           retention-days: 7
