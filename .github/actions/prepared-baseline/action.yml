@@ -1,11 +1,16 @@
 name: Mastodon native preparation
 description: Upstream runtime, installed-gem, and Yarn-download preparation.
+inputs:
+  install-dependencies:
+    description: Install dependency directories using the ordinary caches.
+    default: 'true'
 runs:
   using: composite
   steps:
     - name: Install system dependencies
       shell: bash
       run: |
+        dpkg-query -W -f='${binary:Package}\t${Version}\n' > "$RUNNER_TEMP/prepared-evidence/packages-before.tsv"
         sudo apt-get update
         sudo apt-get install --no-install-recommends -y libicu-dev libidn11-dev libvips42 libheif-plugin-aomdec libheif-plugin-libde265 ffmpeg
     - name: Set up Ruby and cached gems
@@ -13,26 +18,33 @@ runs:
       with:
         ruby-version: .ruby-version
         working-directory: upstream
-        bundler-cache: true
+        bundler-cache: ${{ inputs.install-dependencies }}
         cache-version: prepared-${{ github.run_id }}
     - name: Set up Node
       uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
       with:
         node-version-file: upstream/.nvmrc
         package-manager-cache: false
-    - name: Enable Corepack and find Yarn cache
-      id: yarn
+    - name: Enable Corepack
       shell: bash
       working-directory: upstream
       run: |
         npm install -g corepack
+    - name: Find Yarn cache
+      if: inputs.install-dependencies == 'true'
+      id: yarn
+      shell: bash
+      working-directory: upstream
+      run: |
         echo "path=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
     - name: Restore Yarn download cache
+      if: inputs.install-dependencies == 'true'
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
       with:
         path: ${{ steps.yarn.outputs.path }}
         key: prepared-${{ github.run_id }}-yarn-${{ hashFiles('upstream/yarn.lock') }}
     - name: Install Yarn dependencies
+      if: inputs.install-dependencies == 'true'
       shell: bash
       working-directory: upstream
       run: yarn install --immutable

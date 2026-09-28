@@ -7,6 +7,11 @@ on:
       - .github/actions/prepared-*/**
       - scripts/prepared-*
   workflow_dispatch:
+    inputs:
+      cli_version:
+        description: Optional exact BoringCache CLI release tag.
+        default: ''
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -21,6 +26,7 @@ env:
   DB_PASS: postgres
   REDIS_URL: redis://localhost:6379
   NODE_OPTIONS: --max-old-space-size=6144
+  BORINGCACHE_NO_GIT: 'true'
 jobs:
   seed:
     name: GitHub Mastodon cold baseline
@@ -47,9 +53,40 @@ jobs:
           persist-credentials: false
       - name: Start preparation timer
         run: python3 scripts/prepared-timing.py start
+      - name: Resolve experiment entries
+        run: python3 scripts/prepared-state.py plan
       - uses: ./.github/actions/prepared-baseline
       - name: Record environment readiness
         run: python3 scripts/prepared-timing.py ready
+      - name: Capture successful preparation
+        if: env.PREPARED_VARIANT == 'baseline-cold'
+        run: |
+          /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/capture-time.json" \
+            python3 scripts/prepared-state.py capture
+      - name: Configure prepared-state publication
+        if: env.PREPARED_VARIANT == 'baseline-cold'
+        uses: boringcache/one@f0fb9b2d926a32b10c543e92093ba00c5a291b79 # v1.33.0
+        env:
+          BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+          BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+        with:
+          mode: archive
+          trust-policy: publish
+          cache-profiles: prepared-environment
+          lookup-only: true
+          save: never
+          cli-version: ${{ inputs.cli_version }}
+          fail-on-cache-error: true
+      - name: Publish preparation before application checks
+        if: env.PREPARED_VARIANT == 'baseline-cold'
+        env:
+          BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+          BORINGCACHE_SAVE_TOKEN: ${{ secrets.BORINGCACHE_SAVE_TOKEN }}
+        run: |
+          /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/save-dependencies-time.json" \
+            boringcache run --profile prepared-dependencies --skip-restore --write --fail-on-cache-error -- true
+          /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/save-environment-time.json" \
+            boringcache run --profile prepared-environment --skip-restore --write --fail-on-cache-error -- true
       - uses: ./.github/actions/prepared-checks
       - name: Retain workload evidence
         if: always()
@@ -67,3 +104,61 @@ jobs:
     env:
       PREPARED_VARIANT: baseline-warm
     steps: *baseline
+  prepared:
+    name: BoringCache Mastodon ${{ matrix.variant }}
+    needs: [seed, baseline]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services: *services
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        variant: [dependencies, environment]
+    env:
+      PREPARED_VARIANT: ${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+      - name: Start preparation timer
+        run: python3 scripts/prepared-timing.py start
+      - name: Resolve experiment entries
+        run: python3 scripts/prepared-state.py plan
+      - name: Prepare ordinary runtimes and system packages
+        if: matrix.variant == 'dependencies'
+        uses: ./.github/actions/prepared-baseline
+        with:
+          install-dependencies: 'false'
+      - name: Restore prepared state
+        uses: boringcache/one@f0fb9b2d926a32b10c543e92093ba00c5a291b79 # v1.33.0
+        env:
+          BORINGCACHE_RESTORE_TOKEN: ${{ secrets.BORINGCACHE_RESTORE_TOKEN }}
+        with:
+          mode: archive
+          trust-policy: restore
+          cache-profiles: prepared-${{ matrix.variant }}
+          save: never
+          cli-version: ${{ inputs.cli_version }}
+          fail-on-cache-error: true
+          fail-on-cache-miss: true
+      - name: Activate restored dependencies
+        run: python3 scripts/prepared-state.py activate
+      - name: Validate environment in a new step
+        working-directory: upstream
+        run: |
+          bundle check
+          yarn --version
+          bundle exec ruby -rvips -e 'abort "image operation failed" unless Vips::Image.black(8, 8).width == 8'
+          ffmpeg -version
+      - name: Record environment readiness
+        run: python3 scripts/prepared-timing.py ready
+      - uses: ./.github/actions/prepared-checks
+      - name: Retain workload evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: prepared-${{ matrix.variant }}
+          path: ${{ runner.temp }}/prepared-evidence
+          retention-days: 7
