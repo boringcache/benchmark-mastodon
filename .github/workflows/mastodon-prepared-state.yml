@@ -1,0 +1,69 @@
+name: Mastodon prepared state
+on:
+  push:
+    branches: [prepared-state]
+    paths:
+      - .github/workflows/mastodon-prepared-state.yml
+      - .github/actions/prepared-*/**
+      - scripts/prepared-*
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mastodon-prepared-state
+  cancel-in-progress: false
+env:
+  RAILS_ENV: test
+  BUNDLE_WITH: test
+  BUNDLE_FROZEN: 'true'
+  DB_HOST: localhost
+  DB_USER: postgres
+  DB_PASS: postgres
+  REDIS_URL: redis://localhost:6379
+  NODE_OPTIONS: --max-old-space-size=6144
+jobs:
+  seed:
+    name: GitHub Mastodon cold baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services: &services
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd 'redis-cli ping' --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      PREPARED_VARIANT: baseline-cold
+    steps: &baseline
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+      - name: Start preparation timer
+        run: python3 scripts/prepared-timing.py start
+      - uses: ./.github/actions/prepared-baseline
+      - name: Record environment readiness
+        run: python3 scripts/prepared-timing.py ready
+      - uses: ./.github/actions/prepared-checks
+      - name: Retain workload evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: prepared-${{ env.PREPARED_VARIANT }}
+          path: ${{ runner.temp }}/prepared-evidence
+          retention-days: 7
+  baseline:
+    name: GitHub Mastodon warm baseline
+    needs: seed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services: *services
+    env:
+      PREPARED_VARIANT: baseline-warm
+    steps: *baseline

@@ -1,0 +1,40 @@
+name: Mastodon application checks
+description: Compile assets and run database-backed Rails and JavaScript tests.
+runs:
+  using: composite
+  steps:
+    - name: Restore ordinary asset cache
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+      with:
+        path: |
+          upstream/public/assets
+          upstream/public/packs
+          upstream/public/packs-test
+          upstream/tmp/cache/vite
+        key: prepared-${{ github.run_id }}-assets-${{ hashFiles('upstream/yarn.lock', 'upstream/Gemfile.lock') }}
+    - name: Compile application assets
+      shell: bash
+      working-directory: upstream
+      env:
+        RAILS_ENV: production
+        SECRET_KEY_BASE_DUMMY: '1'
+      run: |
+        /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/assets-time.json" \
+          bin/rails assets:precompile 2>&1 | tee "$RUNNER_TEMP/prepared-evidence/assets.log"
+    - name: Initialize test database
+      shell: bash
+      working-directory: upstream
+      run: bin/rails db:setup
+    - name: Run Rails application tests
+      shell: bash
+      working-directory: upstream
+      run: |
+        /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/rails-time.json" \
+          bin/rspec spec/models/account_spec.rb spec/models/status_spec.rb spec/models/media_attachment_spec.rb \
+          2>&1 | tee "$RUNNER_TEMP/prepared-evidence/rails.log"
+    - name: Run JavaScript tests
+      shell: bash
+      working-directory: upstream
+      run: |
+        /usr/bin/time -f '{"wall_seconds":%e,"max_rss_kib":%M}' -o "$RUNNER_TEMP/prepared-evidence/javascript-time.json" \
+          yarn test:js run 2>&1 | tee "$RUNNER_TEMP/prepared-evidence/javascript.log"
